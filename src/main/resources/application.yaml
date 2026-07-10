@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: Cincom_JD_Project
+  datasource:
+    url: jdbc:postgresql://localhost:5432/statementforge
+    username: sf
+    password: sf
+  jpa:
+    hibernate:
+      ddl-auto: validate      # Flyway owns the schema; Hibernate only validates
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false        # surfaces N+1 instead of hiding it
+  flyway:
+    locations: classpath:db/migration
