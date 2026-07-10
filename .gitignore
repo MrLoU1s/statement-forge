@@ -39,3 +39,6 @@ docs/PROJECT_CONTEXT_BRIEF.md
 ### Local env ###
 .env
 *.log
+
+### Claude Code project config (local workflow, not part of the portfolio) ###
+.claude/

@@ -29,6 +29,19 @@
    improvement is the claim, not the absolute value.
 6. **Commit messages tell the story** (see §13). Insert real measured numbers into the
    message once captured.
+7. **Milestones are sealed phases.** A milestone is DONE only when: (a) the app
+   compiles and boots clean; (b) the agent has driven the new endpoint/benchmark once
+   end-to-end itself; (c) evidence is pasted into `PERFORMANCE.md`; (d) the developer
+   checkpoint passed; (e) everything is committed. Never start milestone N+1 with
+   uncommitted changes from milestone N. Never rewrite an earlier milestone's code
+   except as an explicit, separately-committed follow-up (`fix(mX): ...`) with a stated
+   reason — later milestones *add* (new strategies, new migrations, new endpoints),
+   they don't mutate what was already measured.
+8. **Execution tooling.** The executing agent follows the harness playbook in the
+   local `CLAUDE.md`: per-milestone task-list tracking, background execution for
+   long-running seeds/benchmarks, documentation lookups for version-sensitive
+   configuration, and a pre-commit review pass. The agent selects these itself — the
+   developer never needs to remember to ask.
 
 ---
 
