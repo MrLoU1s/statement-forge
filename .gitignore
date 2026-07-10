@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local-only working docs (personal job-application context) ###
+CLAUDE.md
+docs/PROJECT_CONTEXT_BRIEF.md
+
+### Local env ###
+.env
+*.log

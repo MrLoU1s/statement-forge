@@ -1,6 +1,6 @@
 spring:
   application:
-    name: Cincom_JD_Project
+    name: statement-forge
   datasource:
     url: jdbc:postgresql://localhost:5432/statementforge
     username: sf
