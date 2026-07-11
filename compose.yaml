@@ -6,7 +6,10 @@ services:
       - 'POSTGRES_USER=sf'
       - 'POSTGRES_PASSWORD=sf'
     ports:
-      - '5432:5432'
+      # Host port 5433, not the default 5432: a native PostgreSQL 18 Windows
+      # service already owns 5432 on this machine. Keep application.yaml's
+      # datasource URL in sync with this port.
+      - '5433:5432'
     volumes:
       - 'pgdata:/var/lib/postgresql/data'
     healthcheck:

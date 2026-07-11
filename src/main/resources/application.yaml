@@ -2,7 +2,7 @@ spring:
   application:
     name: statement-forge
   datasource:
-    url: jdbc:postgresql://localhost:5432/statementforge
+    url: jdbc:postgresql://localhost:5433/statementforge
     username: sf
     password: sf
   jpa:
@@ -11,6 +11,13 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        generate_statistics: true   # enables Hibernate Statistics (query counts) for benchmarking
     open-in-view: false        # surfaces N+1 instead of hiding it
   flyway:
     locations: classpath:db/migration
+
+# Dev-only: logs every SQL statement Hibernate executes, at DEBUG. Set to INFO
+# (or delete this block) to silence it — noisy once M2 seeds the 5M-row table.
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
