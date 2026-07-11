@@ -19,7 +19,41 @@
 
 ## Dataset
 
-<!-- TODO(M2): row counts, pg_total_relation_size('transaction'), seed determinism note -->
+Seeded via [`V2__seed_data.sql`](src/main/resources/db/migration/V2__seed_data.sql) —
+set-based `generate_series` inserts, deterministic (`SELECT setseed(0.42);` run first),
+so `docker compose down -v` followed by a reboot regenerates an identical dataset every
+time. Migration applied in **1:43.65s** (5.3M rows total); full app boot **123.9s**.
+
+| Table | Row count |
+|---|---|
+| `customer` | 100,000 |
+| `account` | 200,000 |
+| `transaction` | 5,000,000 |
+| `comm_template` | 3 |
+
+```sql
+SELECT pg_size_pretty(pg_total_relation_size('transaction')) AS transaction_total_size,
+       pg_size_pretty(pg_relation_size('transaction'))       AS heap_only,
+       pg_size_pretty(pg_database_size('statementforge'))    AS whole_db;
+```
+```
+ transaction_total_size | heap_only | whole_db
+------------------------+-----------+----------
+ 457 MB                 | 350 MB    | 491 MB
+```
+(`transaction` has no secondary indexes yet — V1 is PK-only — so the ~107 MB gap
+between heap-only and total is the primary key's btree index. That gap is the baseline
+Investigation 2 (§3) will grow when the composite index lands.)
+
+Distribution sanity (both `0`, confirming the seed's modulo arithmetic is exact, not
+approximate):
+- every customer has exactly 2 accounts (`account.customer_id`)
+- every account has exactly 25 transactions (`transaction.account_id`)
+- `txn_date` spans the full `2024-01-01`..`2025-12-31` window (min and max both hit)
+- `amount` is close to an even split: 2,501,058 negative / 2,498,940 positive / 2 exactly zero
+
+All of the above was captured **after** the migration's closing `ANALYZE;` — the planner
+has fresh, non-stale statistics for every `EXPLAIN` captured in the milestones that follow.
 
 ## 1. Baseline: the naive engine
 
