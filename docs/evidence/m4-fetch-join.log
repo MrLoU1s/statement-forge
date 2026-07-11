@@ -1,0 +1,40 @@
+M4 — chunked fetch-join vs naive baseline
+curl -X POST "http://localhost:8080/api/statement-runs?period=2025-03&strategy=FETCH_JOIN&limitAccounts=1000"
+
+=== Run 1 (cold) ===
+{"runId":3,"strategy":"FETCH_JOIN","accounts":667,"statementsWritten":667,"elapsedMs":4817,"statementsPerSec":138.46792609507992,"jdbcQueryCount":670}
+
+=== Run 2 (warm) ===
+{"runId":4,"strategy":"FETCH_JOIN","accounts":667,"statementsWritten":667,"elapsedMs":2486,"statementsPerSec":268.30249396621076,"jdbcQueryCount":670}
+curl -w time_total: 2.522175s
+
+=== Independent cross-check (psql) ===
+SELECT count(DISTINCT account_id) FROM transaction
+WHERE account_id BETWEEN 1 AND 1000 AND txn_date BETWEEN '2025-03-01' AND '2025-03-31';
+ count
+-------
+   667
+(1 row)
+-> matches accounts=667 exactly: the inner join fetch correctly drops the 333
+   accounts (out of the first 1000) with no transaction in March 2025.
+
+=== SQL debug log excerpt (org.hibernate.SQL DEBUG) — the single chunk query ===
+select
+    a1_0.id, a1_0.customer_id, a1_0.opened_at, a1_0.product_type, a1_0.status,
+    t1_0.account_id, t1_0.id, t1_0.amount, t1_0.description, t1_0.txn_date
+from
+    account a1_0
+join
+    transaction t1_0
+        on a1_0.id=t1_0.account_id
+where
+    a1_0.id between ? and ?
+    and t1_0.txn_date between ? and ?
+... followed directly by 667 individual "insert into statement (...) values (...)"
+statements — the read side collapsed to one query, the write side (row-by-row
+save(), IDENTITY ids) is untouched; that's M7's variable, not this one.
+
+Sanity counts across both runs:
+  join-query occurrences (grep "^    join$")            -> 2  (exactly 1 per run)
+  statement inserts (grep "into" + "statement")           -> 1334  (667 * 2 runs)
+  query count per run: 1 (join query) + 667 (inserts) + 1 (run insert) + 1 (run update) = 670 -- matches jdbcQueryCount exactly.

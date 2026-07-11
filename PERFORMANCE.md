@@ -10,7 +10,7 @@
 
 | # | Investigation | Before | After | Evidence |
 |---|---|---|---|---|
-| 1 | N+1 in statement generation | 2,003 queries / 207.5s (1k accts) | `[M]` queries / `[Y]s` | [§2](#2-n1) |
+| 1 | N+1 in statement generation | 2,003 queries / 207.5s (1k accts) | 670 queries / 2.49s (667 accts, see §2) | [§2](#2-n1) |
 | 2 | Missing composite index | seq scan `[X]ms` | index scan `[Y]ms` | [§3](#3-indexing) |
 | 3 | OFFSET deep pagination | `[X]ms` @ page 10k | `[Y]ms` keyset | [§4](#4-pagination) |
 | 4 | Row-by-row inserts (IDENTITY) | `[X]` rows/s | `[Y]` rows/s | [§5](#5-batch-inserts) |
@@ -135,7 +135,95 @@ revisits this same access pattern once the composite index exists.
 
 ## 2. N+1
 
-<!-- TODO(M4) -->
+**Symptom.** §1's baseline: 1,000 lazy `SELECT`s, one per account, because
+`getTransactions()` is only ever touched after the account is already loaded — Hibernate
+has no way to know in advance which accounts will need their transactions.
+
+**Hypothesis.** Telling Hibernate up front — in the *same* query that loads the accounts
+— which associated rows to bring back should collapse the N per-account round trips into
+one query per batch. JPA's tool for this is a **fetch join**.
+
+**Fix.** `AccountRepository.findWithTransactionsInPeriod` (chunked id-range, not
+`Pageable` — see below):
+```java
+@Query("select a from Account a join fetch a.transactions t "
+        + "where a.id between :fromId and :toId and t.txnDate between :from and :to")
+List<Account> findWithTransactionsInPeriod(long fromId, long toId, LocalDate from, LocalDate to);
+```
+`StatementGenerationService.generateFetchJoin` walks `[1, limitAccounts]` in chunks of
+1,000 ids, calling this once per chunk — at `limitAccounts=1000` that's exactly **one**
+chunk, one query. Two deliberate deviations from PLAN.md's literal snippet, both
+version-checked against current Hibernate docs before writing the code:
+1. **No `distinct`.** PLAN.md's snippet has `select distinct a ...`. As of Hibernate 6,
+   duplicate root entities from a `join fetch` are deduplicated **in memory** after
+   materialization — `distinct` is no longer needed for that purpose and only adds an
+   unnecessary SQL-level `DISTINCT` (extra sort/hash work Postgres doesn't need to do).
+   Source: Hibernate ORM docs, `querylanguage/Relational.adoc` — *"As of Hibernate 6,
+   duplicate results from join fetch are automatically removed in memory... distinct
+   should not be used for this purpose."*
+2. **Not `Pageable`.** Confirmed against the same docs: *"Fetch joins should typically
+   be avoided in limited or paged queries, including those using `setFirstResult()` and
+   `setMaxResults()`."* Combining a fetch join with `Pageable`'s `LIMIT`/`OFFSET` makes
+   Hibernate fetch the **entire** match set and paginate it **in memory** — the
+   `HHH90003004` warning — which defeats the point. The id-range `BETWEEN` chunk is the
+   database-level equivalent of pagination that stays safe to combine with a fetch join.
+
+**Measurement.** Same benchmark, `strategy=FETCH_JOIN, limitAccounts=1000`, cold then warm:
+
+| Strategy | jdbcQueryCount | elapsedMs | accounts | statementsWritten | statements/sec |
+|---|---|---|---|---|---|
+| NAIVE (warm, §1) | 2,003 | 207,538 ms | 1,000 | 1,000 | 4.82 |
+| FETCH_JOIN (cold) | 670 | 4,817 ms | 667 | 667 | 138.5 |
+| FETCH_JOIN (warm) | 670 | 2,486 ms | 667 | 667 | 268.3 |
+
+670 = 1 chunk query + 667 `statement` `INSERT`s + 1 run `INSERT` + 1 run `UPDATE` —
+confirmed by grepping the SQL log (full capture:
+[`docs/evidence/m4-fetch-join.log`](docs/evidence/m4-fetch-join.log)). Query count
+collapsed **1,000× on the read side** (1,000 lazy `SELECT`s → 1 join query); wall-clock
+dropped **~83×** warm-to-warm (207.5s → 2.49s).
+
+```
+select
+    a1_0.id, a1_0.customer_id, a1_0.opened_at, a1_0.product_type, a1_0.status,
+    t1_0.account_id, t1_0.id, t1_0.amount, t1_0.description, t1_0.txn_date
+from
+    account a1_0
+join
+    transaction t1_0
+        on a1_0.id=t1_0.account_id
+where
+    a1_0.id between ? and ?
+    and t1_0.txn_date between ? and ?
+```
+
+**A genuine, measured side-effect — not a bug.** `accounts` dropped from 1,000 to
+**667**. `join fetch` on an unqualified `join` is an **inner** join: an account with
+zero transactions in March 2025 produces no joined row at all and is silently absent
+from the result, so it gets no statement. I did not assume this — I cross-checked it
+independently in `psql`:
+```sql
+SELECT count(DISTINCT account_id) FROM transaction
+WHERE account_id BETWEEN 1 AND 1000 AND txn_date BETWEEN '2025-03-01' AND '2025-03-31';
+-- 667
+```
+Exact match. With ~25 transactions per account spread over 24 months (~1.04/month on
+average), it's entirely expected that roughly a third of accounts land on zero
+transactions in any single specific month. **This is a real coverage gap between the two
+strategies, not an artifact of the fix** — see DECISIONS.md D11 for the `left join
+fetch` alternative that would close it, and the trade-off of doing so.
+
+**What I learned.** Two separate things happened here and it matters to keep them
+apart: (1) the **query count** collapsed because one query with a join replaces N lazy
+loads — that's the N+1 fix, and it would hold even if the insert path were still the
+bottleneck; (2) the **wall-clock time** also collapsed by ~83×, but that's dominated by
+no longer re-scanning the unindexed 5M-row `transaction` table 1,000 times (§1's real
+cost driver) — §3 (M5, composite index) attacks that same cost from the other side and
+will matter even more once §5 (M8) runs the aggregation over all 200k accounts. Neither
+investigation alone would have gotten this baseline to a workable place; they compound.
+Fetch join is the right tool here specifically because the read pattern is "load an
+account together with its transactions for one bounded query" — for a case that needs a
+*flat, decoupled* projection instead (no entity graph, just columns), a DTO projection
+would be the stricter/leaner alternative (mentioned, not built, per PLAN.md M4).
 
 ## 3. Indexing
 
