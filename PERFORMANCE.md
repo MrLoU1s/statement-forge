@@ -11,7 +11,7 @@
 | # | Investigation | Before | After | Evidence |
 |---|---|---|---|---|
 | 1 | N+1 in statement generation | 2,003 queries / 207.5s (1k accts) | 670 queries / 2.49s (667 accts, see §2) | [§2](#2-n1) |
-| 2 | Missing composite index | seq scan `[X]ms` | index scan `[Y]ms` | [§3](#3-indexing) |
+| 2 | Missing composite index | Parallel Seq Scan, 287.9ms, ~44.8k buffers | Index Scan, 0.204ms, 10 buffers | [§3](#3-indexing) |
 | 3 | OFFSET deep pagination | `[X]ms` @ page 10k | `[Y]ms` keyset | [§4](#4-pagination) |
 | 4 | Row-by-row inserts (IDENTITY) | `[X]` rows/s | `[Y]` rows/s | [§5](#5-batch-inserts) |
 | 5 | ORM loop vs set-based native SQL | `[X]s` @ 20k accts | `[Y]s` (full 200k: `[Z]s`) | [§6](#6-orm-vs-native-sql) |
@@ -227,7 +227,114 @@ would be the stricter/leaner alternative (mentioned, not built, per PLAN.md M4).
 
 ## 3. Indexing
 
-<!-- TODO(M5): both EXPLAIN (ANALYZE, BUFFERS) plans verbatim -->
+**Symptom.** A single-account, date-range lookup — `GET
+/api/accounts/{accountId}/transactions?from=&to=`, the read pattern both an on-demand
+statement and each of §1/§2's per-account access ultimately boil down to — is slow
+against the 5M-row `transaction` table.
+
+**Hypothesis.** V1 put no secondary index on `transaction`; the only index is the
+primary key on `id`. A query filtering by `account_id` and `txn_date` has no index to
+use and must scan the whole table.
+
+**Measurement — before** (`account_id = 123456`, period `2025-01-01..2025-03-31`,
+warm run kept, full plans in
+[`docs/evidence/m5-index.log`](docs/evidence/m5-index.log)):
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM transaction
+WHERE account_id = 123456 AND txn_date BETWEEN '2025-01-01' AND '2025-03-31';
+```
+```
+ Gather  (cost=1000.00..82287.73 rows=3 width=40) (actual time=69.672..287.755 rows=4 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=15984 read=28845
+   ->  Parallel Seq Scan on transaction  (cost=0.00..81287.43 rows=1 width=40) (actual time=160.101..266.796 rows=1 loops=3)
+         Filter: ((txn_date >= '2025-01-01'::date) AND (txn_date <= '2025-03-31'::date) AND (account_id = 123456))
+         Rows Removed by Filter: 1666665
+         Buffers: shared hit=15984 read=28845
+ Planning:
+   Buffers: shared hit=80
+ Planning Time: 0.656 ms
+ Execution Time: 287.881 ms
+```
+Parallel Seq Scan across 3 workers, ~5,000,000 rows read (`Rows Removed by Filter` ≈
+1.67M × 3), ~44,800 buffers touched, 287.9 ms even warm. `curl -w time_total`, warm:
+**244.7 ms** end-to-end through the app.
+
+**Fix.** `V3__transaction_account_date_index.sql`:
+```sql
+CREATE INDEX idx_transaction_account_date ON transaction (account_id, txn_date);
+```
+`account_id` (equality predicate) leads, `txn_date` (range predicate) trails. A btree is
+sorted by the leading column first; within one `account_id` value the rows are then
+already ordered by `txn_date`. Equality-first lets Postgres seek directly to one
+account's transactions and walk a short, already-date-sorted run for the range check.
+The reverse order, `(txn_date, account_id)`, would only let the date range narrow the
+leading column — Postgres would still have to filter every date-matching row across all
+200,000 accounts for the right `account_id`, i.e. a much larger, unsorted-per-account
+scan. Plain `CREATE INDEX`, not `CONCURRENTLY`: Flyway runs each migration inside a
+transaction, and `CONCURRENTLY` cannot run inside one — a real production run against a
+live table would build it outside Flyway with `CONCURRENTLY` to avoid holding a write
+lock on `transaction` for the build's duration (here: 5.111s, empty table locking
+concern in dev but not negligible at production write volume). Migration applied
+cleanly: `Successfully applied 1 migration ... (execution time 00:05.111s)`.
+
+**Measurement — after** (same query, warm run):
+```
+ Index Scan using idx_transaction_account_date on transaction  (cost=0.43..16.49 rows=3 width=40) (actual time=0.057..0.118 rows=4 loops=1)
+   Index Cond: ((account_id = 123456) AND (txn_date >= '2025-01-01'::date) AND (txn_date <= '2025-03-31'::date))
+   Buffers: shared hit=10
+ Planning:
+   Buffers: shared hit=105
+ Planning Time: 0.682 ms
+ Execution Time: 0.204 ms
+```
+
+| | Before | After | Δ |
+|---|---|---|---|
+| Plan | Parallel Seq Scan (3 workers) | Index Scan | seq → index |
+| Buffers | ~44,829 (15,984 hit + 28,845 read) | 10 (all hits, 0 reads) | ~4,483× fewer |
+| DB execution time (warm) | 287.881 ms | 0.204 ms | ~1,411× |
+| API latency, `curl` (warm) | 244.7 ms | 17.9 ms | ~13.7× |
+
+The DB-side improvement (~1,411×) is much larger than the end-to-end API improvement
+(~13.7×) because once the query itself drops to sub-millisecond, the HTTP round trip,
+connection acquisition, and JSON serialization — previously negligible next to a
+287.9 ms query — become the dominant cost. That gap is itself a small lesson: past a
+certain point, the database stops being the bottleneck and the rest of the stack takes
+over.
+
+**Bonus — investigation interaction.** Re-ran §1 (NAIVE) and §2 (FETCH_JOIN) at
+`limitAccounts=1000` after V3 landed, no code changes:
+
+| Strategy | Before V3 | After V3 | Query count (unchanged) |
+|---|---|---|---|
+| NAIVE | 207,538 ms | **6,853 ms** (~30×) | 2,003 |
+| FETCH_JOIN | 2,486 ms | **2,073 ms** (~1.2×) | 670 |
+
+NAIVE's *query count* didn't change — it's still 1,000 separate lazy-load round trips,
+§4/M4's variable, not this one — but each of those 1,000 queries now hits the index
+instead of re-scanning 5M rows, so the *cost per query* collapsed and the whole run got
+~30× faster from this fix alone. FETCH_JOIN barely moved: its single chunked query
+(`WHERE a.id BETWEEN ... AND t.txn_date BETWEEN ...`) was already a fairly bounded scan
+before the index existed, so there was less seq-scan cost to remove. This is the clean
+illustration that §1/§2 (query *count*) and §3 (query *cost*) are independent levers —
+neither alone would get the naive baseline to a workable place, and they compound.
+
+**What I learned.** The planner didn't choose a seq scan out of a bad decision — before
+V3, a seq scan genuinely was the only available access path; there was no index to use.
+Adding one didn't just make the *existing* plan faster, it made a **different, cheaper
+plan possible at all** — that's the real mechanism behind "add an index," not "make
+queries faster" in the abstract. The `Buffers: shared hit=10` in the after-plan (zero
+`read`) also shows the whole answer now lives in a handful of index pages, small enough
+to stay resident — a stark contrast to the before-plan's ~28,845 buffers read from disk
+per query. Cost of this fix, for balance: every index is also write amplification and
+storage — this index has to be maintained on every `INSERT`/`UPDATE`/`DELETE` touching
+`transaction`, which matters directly for §5/M7 (bulk inserts) and is why V1 shipped
+with no indexes at all rather than "just in case" ones. An index-only scan (avoiding the
+heap fetch entirely) would need `amount`/`description` in an `INCLUDE (...)` clause if
+those columns were also read-hot without being part of the search predicate.
 
 ## 4. Pagination
 

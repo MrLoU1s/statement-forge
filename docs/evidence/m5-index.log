@@ -1,0 +1,79 @@
+M5 — composite index transaction(account_id, txn_date)
+Query under test:
+EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM transaction
+WHERE account_id = 123456 AND txn_date BETWEEN '2025-01-01' AND '2025-03-31';
+
+=== BEFORE (V1/V2 schema, no secondary index) ===
+--- cold ---
+ Gather  (cost=1000.00..82287.73 rows=3 width=40) (actual time=1013.995..1023.294 rows=4 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=15932 read=28897
+   ->  Parallel Seq Scan on transaction  (cost=0.00..81287.43 rows=1 width=40) (actual time=738.037..1006.777 rows=1 loops=3)
+         Filter: ((txn_date >= '2025-01-01'::date) AND (txn_date <= '2025-03-31'::date) AND (account_id = 123456))
+         Rows Removed by Filter: 1666665
+         Buffers: shared hit=15932 read=28897
+ Planning:
+   Buffers: shared hit=80
+ Planning Time: 1.576 ms
+ Execution Time: 1023.465 ms
+
+--- warm ---
+ Gather  (cost=1000.00..82287.73 rows=3 width=40) (actual time=69.672..287.755 rows=4 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=15984 read=28845
+   ->  Parallel Seq Scan on transaction  (cost=0.00..81287.43 rows=1 width=40) (actual time=160.101..266.796 rows=1 loops=3)
+         Filter: ((txn_date >= '2025-01-01'::date) AND (txn_date <= '2025-03-31'::date) AND (account_id = 123456))
+         Rows Removed by Filter: 1666665
+         Buffers: shared hit=15984 read=28845
+ Planning:
+   Buffers: shared hit=80
+ Planning Time: 0.656 ms
+ Execution Time: 287.881 ms
+
+curl "http://localhost:8080/api/accounts/123456/transactions?from=2025-01-01&to=2025-03-31"
+  cold: time_total=0.688498
+  warm: time_total=0.244730
+
+=== V3__transaction_account_date_index.sql applied ===
+Migrating schema "public" to version "3 - transaction account date index"
+Successfully applied 1 migration to schema "public", now at version v3 (execution time 00:05.111s)
+
+=== AFTER (V3: idx_transaction_account_date on (account_id, txn_date)) ===
+--- cold ---
+ Index Scan using idx_transaction_account_date on transaction  (cost=0.43..16.49 rows=3 width=40) (actual time=0.206..0.260 rows=4 loops=1)
+   Index Cond: ((account_id = 123456) AND (txn_date >= '2025-01-01'::date) AND (txn_date <= '2025-03-31'::date))
+   Buffers: shared hit=5 read=5
+ Planning:
+   Buffers: shared hit=103 read=2
+ Planning Time: 1.448 ms
+ Execution Time: 0.357 ms
+
+--- warm ---
+ Index Scan using idx_transaction_account_date on transaction  (cost=0.43..16.49 rows=3 width=40) (actual time=0.057..0.118 rows=4 loops=1)
+   Index Cond: ((account_id = 123456) AND (txn_date >= '2025-01-01'::date) AND (txn_date <= '2025-03-31'::date))
+   Buffers: shared hit=10
+ Planning:
+   Buffers: shared hit=105
+ Planning Time: 0.682 ms
+ Execution Time: 0.204 ms
+
+curl "http://localhost:8080/api/accounts/123456/transactions?from=2025-01-01&to=2025-03-31"
+  cold: time_total=0.487263
+  warm: time_total=0.017920
+
+=== Bonus: investigation interaction (M4/M3 strategies re-run after the index landed) ===
+POST /api/statement-runs?period=2025-03&strategy=NAIVE&limitAccounts=1000
+  {"runId":5,"strategy":"NAIVE","accounts":1000,"statementsWritten":1000,"elapsedMs":6853,"statementsPerSec":145.92,"jdbcQueryCount":2003}
+  -> same 2003 queries as the pre-index baseline (207,538ms) - query COUNT is
+     unchanged (that's M4's variable), but each of the 1000 lazy per-account
+     SELECTs now hits the index instead of a seq scan: 207.5s -> 6.85s (~30x).
+
+POST /api/statement-runs?period=2025-03&strategy=FETCH_JOIN&limitAccounts=1000
+  {"runId":6,"strategy":"FETCH_JOIN","accounts":667,"statementsWritten":667,"elapsedMs":2073,"statementsPerSec":321.76,"jdbcQueryCount":670}
+  -> modest improvement (2486ms -> 2073ms): the fetch-join's single chunk
+     query was already reading a bounded id range with the account_id FK's
+     implicit index support before V3; the composite index mainly helps
+     per-row point lookups (NAIVE's access pattern), less so a range scan
+     that was already fairly targeted.

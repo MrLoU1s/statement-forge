@@ -1,0 +1,17 @@
+-- Composite index for the account-scoped date-range query (PLAN.md M5):
+-- transaction WHERE account_id = ? AND txn_date BETWEEN ? AND ?
+--
+-- Column order: account_id (equality) first, txn_date (range) second. A btree
+-- is only sorted by leading column then by the next within each equal-leading
+-- value, so equality-first lets Postgres seek straight to one account's
+-- transactions, already ordered by date, and answer the range with a single
+-- contiguous scan. The reverse order (txn_date, account_id) would only let
+-- the range predicate narrow the leading column, leaving account_id as an
+-- unsorted filter over every date-matching row across all 200k accounts.
+--
+-- Plain CREATE INDEX, not CONCURRENTLY: Flyway runs each migration inside a
+-- transaction, and CONCURRENTLY cannot run inside one. Acceptable for this
+-- dev-scale migration; a production run on a live table would use
+-- CONCURRENTLY outside of Flyway's transaction (e.g. a separate maintenance
+-- step) to avoid holding a write lock on `transaction` for the build duration.
+CREATE INDEX idx_transaction_account_date ON transaction (account_id, txn_date);

@@ -21,8 +21,21 @@ mirrors how a long-lived schema should evolve: evidence first.
 ## D5 — Statement id: IDENTITY → SEQUENCE (V4)
 <!-- TODO(M7): the batching gotcha, allocationSize=50 = INCREMENT BY 50, id gaps accepted -->
 
-## D6 — Composite index column order
-<!-- TODO(M5): (account_id, txn_date) — equality first, range second -->
+## D6 — Composite index column order: (account_id, txn_date)
+`idx_transaction_account_date ON transaction (account_id, txn_date)` — equality column
+(`account_id`) leads, range column (`txn_date`) trails. A btree sorts by the leading
+column first; within a fixed leading value the rows are then already sorted by the
+second column, so the range predicate becomes a short contiguous walk instead of a
+filter over unsorted rows. Measured: seq scan (287.9ms, ~44.8k buffers) → index scan
+(0.204ms, 10 buffers) — see PERFORMANCE.md §3. The reverse order, `(txn_date,
+account_id)`, would only let Postgres narrow by date first, then still have to filter
+every date-matching row (across all 200k accounts) for the right account — a much
+bigger, less-sorted scan; not built, reasoned through instead. Trade-off: every index
+adds write-time maintenance cost and storage — this one has to be updated on every
+`transaction` write, directly relevant to M7's bulk-insert investigation. Plain
+`CREATE INDEX`, not `CONCURRENTLY`, because Flyway migrations run inside a transaction
+and `CONCURRENTLY` cannot; a live production table would build it outside Flyway with
+`CONCURRENTLY` to avoid holding a write lock for the build duration.
 
 ## D7 — Keyset pagination for deep listing
 <!-- TODO(M6): trade-off — no random page jumps; cursor API style -->
