@@ -10,7 +10,7 @@
 
 | # | Investigation | Before | After | Evidence |
 |---|---|---|---|---|
-| 1 | N+1 in statement generation | `[N]` queries / `[X]s` | `[M]` queries / `[Y]s` | [§2](#2-n1) |
+| 1 | N+1 in statement generation | 2,003 queries / 207.5s (1k accts) | `[M]` queries / `[Y]s` | [§2](#2-n1) |
 | 2 | Missing composite index | seq scan `[X]ms` | index scan `[Y]ms` | [§3](#3-indexing) |
 | 3 | OFFSET deep pagination | `[X]ms` @ page 10k | `[Y]ms` keyset | [§4](#4-pagination) |
 | 4 | Row-by-row inserts (IDENTITY) | `[X]` rows/s | `[Y]` rows/s | [§5](#5-batch-inserts) |
@@ -57,7 +57,81 @@ has fresh, non-stale statistics for every `EXPLAIN` captured in the milestones t
 
 ## 1. Baseline: the naive engine
 
-<!-- TODO(M3): response JSON, query count, SQL log excerpt, extrapolation to 200k accounts -->
+**Symptom.** `StatementGenerationService` (`strategy=NAIVE`) loads the first `limitAccounts`
+accounts ordered by id, then for **each account** calls `account.getTransactions()` — a
+`LAZY` `@OneToMany` — filters the returned collection to the requested period in Java,
+sums debits/credits/closing balance in Java, and writes one `statement` row at a time via
+`statementRepository.save(...)`. The whole run is one `@Transactional` method (fits the
+plan's "wrap in one transaction"). `open-in-view: false` means this lazy access has to
+happen *inside* that transaction — if it were left to the (absent) view layer it would
+throw `LazyInitializationException` instead of quietly firing a query, which is exactly
+why that setting is on: it forces every lazy touch to be visible in the service layer
+where the SQL log is being watched, not hidden behind a web-tier session.
+
+**Hypothesis.** `transaction(account_id, …)` has no index yet (V1 is PK-only) — every
+`getTransactions()` call is a full sequential scan of a 5,000,000-row table, once per
+account.
+
+**Measurement.** `POST /api/statement-runs?period=2025-03&strategy=NAIVE&limitAccounts=1000`,
+run twice (cold, then warm) against the seeded dataset:
+
+| Run | elapsedMs | statements/sec | jdbcQueryCount |
+|---|---|---|---|
+| 1 (cold) | 244,465 ms (**244.5 s**) | 4.09 | 2,003 |
+| 2 (warm) | 207,538 ms (**207.5 s**) | 4.82 | 2,003 |
+
+Warm-run response:
+```json
+{"runId":2,"strategy":"NAIVE","accounts":1000,"statementsWritten":1000,"elapsedMs":207538,"statementsPerSec":4.818394703620542,"jdbcQueryCount":2003}
+```
+
+`jdbcQueryCount` (Hibernate `Statistics.getPrepareStatementCount()`, cleared per run) is
+**exactly** 2,003 = 1 accounts `SELECT` + 1,000 lazy `transaction` `SELECT`s (one per
+account) + 1,000 `statement` `INSERT`s (row-by-row, `IDENTITY`) + 1 `statement_run`
+`INSERT` + 1 `statement_run` `UPDATE` (RUNNING → COMPLETED) — matches the 1+N prediction
+precisely, on both runs. `GET /api/statement-runs/2` confirms the completed run:
+```json
+{"runId":2,"runDate":"2026-07-11","channel":"BATCH","status":"COMPLETED","version":1,"statementsWritten":1000}
+```
+
+SQL debug log excerpt (`org.hibernate.SQL` at DEBUG) — one account's select/insert cycle,
+identical shape repeated 1,000 times per run (full capture:
+[`docs/evidence/m3-naive-baseline.log`](docs/evidence/m3-naive-baseline.log)):
+```
+select
+    t1_0.account_id, t1_0.id, t1_0.amount, t1_0.description, t1_0.txn_date
+from
+    transaction t1_0
+where
+    t1_0.account_id=?
+insert into statement (account_id, closing_balance, document_ref, period_end,
+    period_start, statement_run_id, total_credits, total_debits) values (?, ?, ?, ?, ?, ?, ?, ?)
+select
+    t1_0.account_id, t1_0.id, t1_0.amount, t1_0.description, t1_0.txn_date
+from
+    transaction t1_0
+where
+    t1_0.account_id=?
+... (repeats)
+```
+
+**Extrapolation to 200,000 accounts (linear, from the warm run — stated as an estimate,
+not measured):** 207.5 s / 1,000 accounts × 200,000 accounts ≈ **41,508 s ≈ 11.5 hours**.
+A full naive run at production scale is not merely slow — it is operationally
+impossible; that impossibility is itself the finding this milestone set out to produce.
+No full-scale run was attempted.
+
+**Fix / Result.** Not yet — this section is the "before." Investigation 1 (§2, M4)
+replaces the lazy per-account load with a chunked fetch join.
+
+**What I learned.** The query count collapsing exactly to `1 + N + N + 2` is the cleanest
+possible confirmation that `getTransactions()` is the trigger: each element of the `N`
+lazy-loads is a *separate* round trip because Hibernate has no way to know in advance
+which accounts will be touched — it defers the `SELECT` until the collection is actually
+iterated (`account.getTransactions()` in the `for` loop), one query per proxy. On this
+laptop that single unindexed lookup against 5M rows costs on the order of 200ms per
+account — the real cost driver, more than the query *count* itself; §3 (Investigation 2)
+revisits this same access pattern once the composite index exists.
 
 ## 2. N+1
 

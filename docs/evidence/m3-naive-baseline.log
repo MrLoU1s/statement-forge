@@ -1,0 +1,49 @@
+M3 — naive statement generator baseline
+curl -X POST "http://localhost:8080/api/statement-runs?period=2025-03&strategy=NAIVE&limitAccounts=1000"
+
+=== Run 1 (cold) ===
+{"runId":1,"strategy":"NAIVE","accounts":1000,"statementsWritten":1000,"elapsedMs":244465,"statementsPerSec":4.090565111570164,"jdbcQueryCount":2003}
+
+=== Run 2 (warm) ===
+{"runId":2,"strategy":"NAIVE","accounts":1000,"statementsWritten":1000,"elapsedMs":207538,"statementsPerSec":4.818394703620542,"jdbcQueryCount":2003}
+curl -w time_total: 207.633610s (matches elapsedMs, request/response overhead negligible)
+
+=== GET /api/statement-runs/2 ===
+{"runId":2,"runDate":"2026-07-11","channel":"BATCH","status":"COMPLETED","version":1,"statementsWritten":1000}
+
+=== SQL debug log excerpt (org.hibernate.SQL DEBUG), one account's cycle ===
+2026-07-11T23:47:42.897+03:00 DEBUG 20524 --- [statement-forge] [nio-8080-exec-1] org.hibernate.SQL                        :
+    select
+        t1_0.account_id,
+        t1_0.id,
+        t1_0.amount,
+        t1_0.description,
+        t1_0.txn_date
+    from
+        transaction t1_0
+    where
+        t1_0.account_id=?
+2026-07-11T23:47:44.063+03:00 DEBUG 20524 --- [statement-forge] [nio-8080-exec-1] org.hibernate.SQL                        :
+    insert
+    into
+        statement
+        (account_id, closing_balance, document_ref, period_end, period_start, statement_run_id, total_credits, total_debits)
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?)
+2026-07-11T23:47:44.073+03:00 DEBUG 20524 --- [statement-forge] [nio-8080-exec-1] org.hibernate.SQL                        :
+    select
+        t1_0.account_id,
+        t1_0.id,
+        t1_0.amount,
+        t1_0.description,
+        t1_0.txn_date
+    from
+        transaction t1_0
+    where
+        t1_0.account_id=?
+... (this select/insert pair repeats 1,000 times per run — one full unindexed scan of the
+5,000,000-row transaction table per account, no LIMIT, no index on account_id)
+
+Sanity count across both runs (2,000 statements written total):
+  grep -c "from" block containing "transaction t1_0"  -> 2000
+  grep -c "into" block containing "statement"          -> 2000
