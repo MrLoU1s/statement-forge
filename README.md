@@ -13,9 +13,6 @@ batch inserts, ORM vs native SQL, optimistic locking), each backed by real
 `EXPLAIN (ANALYZE, BUFFERS)` output and timings. Design rationale lives in
 [`DECISIONS.md`](DECISIONS.md).
 
-> Personal learning project, built in ~1 day with AI assistance (Claude Code). All
-> numbers are real, measured on my machine, and regenerable — nothing is invented.
-
 ## Headline results
 
 | Investigation | Before | After |
@@ -27,7 +24,14 @@ batch inserts, ORM vs native SQL, optimistic locking), each backed by real
 | Row-by-row batch vs set-based native SQL (20k accounts) | 11,426ms (`BATCHED`) | 2,071ms (`NATIVE_SQL`, ~8.3×) — full 200k accounts in 9.6s |
 | Optimistic locking on concurrent status update | silent lost update, no error | `409 Conflict`, version-guarded |
 
+**The full arc, start to finish:** the naive version's own numbers said a complete
+monthly run — all 200,000 accounts — would take an estimated **11.5 hours**. The
+final version does the same job, measured, in **9.6 seconds**.
+
 Full write-up, `EXPLAIN` plans, and raw evidence for every row: [`PERFORMANCE.md`](PERFORMANCE.md).
+
+> Personal learning project, built in ~1 day with AI assistance (Claude Code). All
+> numbers are real, measured on my machine, and regenerable — nothing is invented.
 
 ## Quickstart
 
