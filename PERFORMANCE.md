@@ -13,7 +13,7 @@
 | 1 | N+1 in statement generation | 2,003 queries / 207.5s (1k accts) | 670 queries / 2.49s (667 accts, see §2) | [§2](#2-n1) |
 | 2 | Missing composite index | Parallel Seq Scan, 287.9ms, ~44.8k buffers | Index Scan, 0.204ms, 10 buffers | [§3](#3-indexing) |
 | 3 | OFFSET deep pagination | 115.1ms DB / 123.2ms API @ depth 10k (offset 500k) | 0.218ms DB / 13.7ms API, flat at any depth | [§4](#4-pagination) |
-| 4 | Row-by-row inserts (IDENTITY) | `[X]` rows/s | `[Y]` rows/s | [§5](#5-batch-inserts) |
+| 4 | Row-by-row inserts (IDENTITY) | 306.16 rows/s (batch_size=50 alone: 303.72, no change) | 1,164.27 rows/s (SEQUENCE + batch + rewrite) | [§5](#5-batch-inserts) |
 | 5 | ORM loop vs set-based native SQL | `[X]s` @ 20k accts | `[Y]s` (full 200k: `[Z]s`) | [§6](#6-orm-vs-native-sql) |
 | 6 | Lost update on run status | — | version conflict → 409 | [§7](#7-optimistic-locking) |
 
@@ -474,7 +474,177 @@ consumers actually do — keyset is strictly better and this measurement is why.
 
 ## 5. Batch inserts
 
-<!-- TODO(M7): four-row throughput table, incl. the negative result (batch_size under IDENTITY) -->
+**Symptom.** Every strategy so far (`NAIVE`, `FETCH_JOIN`) writes `statement` rows one at a time —
+`statementRepository.save(...)` inside a loop, one JDBC round trip per row. At §1/§2's scale
+(`limitAccounts=1000`) that cost was hidden behind the N+1 read-side problem; §2's own measurement
+already flagged it once the read side was fixed ("insert time still dominates — say so honestly").
+This investigation isolates that one remaining variable: the write path.
+
+**Hypothesis.** JDBC supports batching multiple statements into fewer round trips
+(`PreparedStatement.addBatch()`/`executeBatch()`), and Hibernate exposes this via
+`hibernate.jdbc.batch_size`. Turning it on should collapse thousands of individual `INSERT` round
+trips into a much smaller number of batch executions.
+
+Three measured stages, same benchmark (`POST
+/api/statement-runs?period=2025-03&strategy=...&limitAccounts=20000` — 10× §1/§2's scale so
+insert-side cost dominates the measurement), same warm-run discipline, full capture in
+[`docs/evidence/m7-batch-inserts.log`](docs/evidence/m7-batch-inserts.log). At this scale, 13,303 of
+the 20,000 requested accounts have a March-2025 transaction and get a statement — 66.5% coverage,
+matching §2's 667/1,000 = 66.7% at 10× the account count, the same inner-join account-drop behavior
+(D11) holding steady with scale.
+
+### Stage A — before: row-by-row `save()`, `IDENTITY`, no batch config
+
+| Run | statements | elapsedMs | statements/sec | jdbcQueryCount |
+|---|---|---|---|---|
+| 1 | 13,303 | 47,108 ms | 282.39 | 13,325 |
+| 2 (warm) | 13,303 | 43,451 ms | 306.16 | 13,325 |
+
+`jdbcQueryCount` = 13,325 = 20 chunked fetch-join `SELECT`s (id-range chunks of 1,000, unchanged from
+§2) + 13,303 single-row `statement` `INSERT`s + 1 run `INSERT` + 1 run `UPDATE` — every insert is
+still its own round trip.
+
+### Stage B — the gotcha, measured (negative result)
+
+**Fix attempted.** Set *only* `spring.jpa.properties.hibernate.jdbc.batch_size: 50` and
+`hibernate.order_inserts: true` in `application.yaml`. Nothing else changed — `Statement.id` is still
+`GenerationType.IDENTITY`. Restarted the app; the boot log confirms the setting loaded:
+```
+org.hibernate.orm.jdbc.batch : HHH100501: Automatic JDBC statement batching enabled (maximum batch size 50)
+```
+
+**Expected result — read from Hibernate's own docs before writing any code, not assumed:**
+> Hibernate disables insert batching at the JDBC level transparently if you use an identity
+> identifier generator.
+— hibernate-orm user guide, *Batching* chapter (`documentation/.../chapters/batch/Batching.adoc`).
+
+**Measured** — same benchmark, same scale:
+
+| Run | statements | elapsedMs | statements/sec | jdbcQueryCount |
+|---|---|---|---|---|
+| 1 | 13,303 | 45,658 ms | 291.36 | 13,325 |
+| 2 (warm) | 13,303 | 43,800 ms | 303.72 | 13,325 |
+
+Warm-to-warm against Stage A: 306.16 → 303.72 stmt/s, a **-0.8% change** — noise, not a regression
+(Stage A's own cold→warm swing was +8.4%, several times larger than this entire delta). `jdbcQueryCount`
+is **identical**, 13,325, in both stages: the config change didn't even alter query *count*, only
+*(attempted)* execution grouping — and that grouping never engaged. This is the negative result the
+investigation exists to produce: `hibernate.jdbc.batch_size` does nothing here, silently, with no
+warning or exception. The boot log's "batching enabled" is true in general and irrelevant for this
+specific entity's inserts.
+
+### Stage C — the fix
+
+`Statement.id` moves from `IDENTITY` to a pooled `SEQUENCE` — `V4__statement_id_sequence.sql`:
+```sql
+ALTER TABLE statement ALTER COLUMN id DROP IDENTITY;
+CREATE SEQUENCE statement_id_seq INCREMENT BY 50 OWNED BY statement.id;
+SELECT setval('statement_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM statement));
+```
+```java
+@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "statement_seq")
+@SequenceGenerator(name = "statement_seq", sequenceName = "statement_id_seq", allocationSize = 50)
+private Long id;
+```
+`allocationSize = 50` matches `INCREMENT BY 50` exactly: Hibernate's pooled sequence optimizer calls
+`nextval()` **once** to claim a block of 50 ids, hands them out client-side for the next 50 entities,
+and only calls `nextval()` again once that block is exhausted — a run of inserts needs no per-row
+round trip to learn its id, unlike `IDENTITY`, which can only ever learn its id from the database
+*after* that specific row is inserted (the mechanical reason batching and `IDENTITY` are incompatible).
+Migration applied cleanly against a table that already had 58,213 `IDENTITY`-generated rows from every
+prior run (M3/M4/Stage A/B): `setval` seeded the sequence past the existing max, confirmed by the
+migration log (`docs/evidence/m7-batch-inserts.log`) — no id collisions.
+
+Two more pieces:
+- `application.yaml` datasource URL gains `?reWriteBatchedInserts=true` — a **pgjdbc driver-level**
+  optimization, independent of Hibernate: it rewrites a JDBC batch of same-shaped
+  `INSERT ... VALUES (?, ...)` calls into one `INSERT ... VALUES (?, ...), (?, ...), ...` statement,
+  cutting network round trips further within a single `executeBatch()`.
+- `StatementGenerationService.generateBatched`: the same chunked fetch-join **read** path as §2's
+  `generateFetchJoin` (the read side is not this investigation's variable, deliberately unchanged); the
+  **write** side accumulates `Statement` entities into a list and calls
+  `statementRepository.saveAll(...)` + `entityManager.flush()` + `entityManager.clear()` every 1,000
+  entities — `flush()` forces the accumulated inserts to execute as real batches now, `clear()`
+  detaches everything from the persistence context so it can't grow unbounded across a
+  20,000-account run (PLAN.md gotcha #11).
+
+**Verified batching is real**, not just "enabled" — `logging.level.org.hibernate.orm.jdbc.batch: TRACE`:
+```
+Created JDBC batch (50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+Adding to JDBC batch (1 / 50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+... (48 more) ...
+Executing JDBC batch (50 / 50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+```
+repeated 266 times per run, closing with one partial batch for the 13,303rd row and the final run-status
+update:
+```
+Executing JDBC batch (3 / 50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+Executing JDBC batch (1 / 50) - [com.muiyurocodes.statementforge.domain.StatementRun#UPDATE]
+```
+**Correction to PLAN.md, recorded honestly:** the plan's expected log text was `"Executing batch size:
+50"`; Hibernate 7.4.1.Final's real message is `"Executing JDBC batch (50 / 50) - [Entity#OPERATION]"`
+— close in spirit, different in exact wording. Worth stating precisely rather than assuming the plan's
+paraphrase was verbatim, same discipline as D11's `distinct` check. Small bonus finding embedded in
+that same log: the final `StatementRun` status `UPDATE` goes through the identical batch machinery as a
+batch-of-one, which is why the per-run "Executing JDBC batch" line count is 268, not the 267 the
+`Statement` inserts alone would produce (13 full 1,000-entity flushes × 20 batches of 50 = 260, + one
+closing flush of 303 = 6 batches of 50 + 1 of 3 = 267, + the run update = 268); grepped count across
+both runs: 536 = 268 × 2, exact.
+
+**Measured:**
+
+| Run | statements | elapsedMs | statements/sec | jdbcQueryCount |
+|---|---|---|---|---|
+| 1 | 13,303 | 12,302 ms | 1,081.37 | 304 |
+| 2 (warm) | 13,303 | 11,426 ms | 1,164.27 | 303 |
+
+### Summary — four configurations (PLAN.md's requested table; NAIVE row is §1's own 1,000-account
+measurement for scale, not re-run at 20,000 — see note below)
+
+| Strategy | Scale | jdbcQueryCount | elapsedMs (warm) | statements/sec (warm) |
+|---|---|---|---|---|
+| NAIVE — row-by-row + N+1 (§1, for scale) | 1,000 accts | 2,003 | 207,538 | 4.82 |
+| FETCH_JOIN — row-by-row, `IDENTITY` | 20,000 accts | 13,325 | 43,451 | 306.16 |
+| FETCH_JOIN + `batch_size=50` — `IDENTITY` unchanged | 20,000 accts | 13,325 | 43,800 | 303.72 (negative result) |
+| BATCHED — `SEQUENCE` + `batch_size` + `reWriteBatchedInserts` | 20,000 accts | 303 | 11,426 | **1,164.27** |
+
+NAIVE was not re-run at 20,000 accounts: §1 already established that a naive run at any real scale is
+operationally impossible (~11.5h extrapolated for 200k accounts), and NAIVE conflates two variables —
+N+1 *and* row-by-row inserts — while this investigation is isolating the insert variable alone against
+the already-N+1-fixed `FETCH_JOIN` baseline (the same "one variable per investigation" discipline M4
+stated when it left the insert path untouched). `statements/sec` is scale-independent, so the row is
+still a fair comparison point.
+
+**This investigation's own effect** (FETCH_JOIN → BATCHED, insert path only): **~3.80× throughput**
+(306.16 → 1,164.27 stmt/s), **~3.80× wall-clock** (43,451ms → 11,426ms), **~44× fewer JDBC statements**
+(13,325 → 303). The query-count collapse is the larger number because it counts *distinct prepared
+statement executions*, which drops from "one per row" to "one per batch of up to 50, plus one per
+chunk read"; wall-clock improves by a smaller factor because each batch still costs real time to
+execute — just far less of it — and the read side (fetch-join chunk queries) is unchanged and still
+contributes its own cost. **The full compounding arc across every investigation so far** (NAIVE →
+BATCHED, N+1 fix + index + batching together, at their respective scales): 4.82 → 1,164.27 stmt/s,
+~241× — a different, larger claim than the 3.80× above, and worth keeping the two distinct: one is
+this section's isolated finding, the other is what four sections' worth of fixes add up to.
+
+**What I learned.** The negative-result numbers (Stage A → Stage B, -0.8%) are the more important
+measurement in this section, not the headline 3.80×: they prove `hibernate.jdbc.batch_size` is not a
+switch that unconditionally "turns batching on" — it is silently gated by id-generation strategy, with
+no exception and no failure-point warning (only the *boot-time* "enabled" message, which is true in
+general but not for this specific entity's inserts). The gate makes sense once you know why:
+`IDENTITY` can only produce an id as a side effect of actually inserting that exact row, so Hibernate
+*must* execute row N before it can even finish constructing row N+1 — and more fundamentally, a JDBC
+batch is a promise to send several statements without waiting for individual results, a promise
+`IDENTITY` structurally cannot keep. A pooled `SEQUENCE` sidesteps this by moving id assignment
+*before* the `INSERT` and *off* the per-row critical path — the database still hands out ids from one
+source of truth, just 50 at a time instead of one at a time. The accepted cost, stated plainly: ids can
+have gaps (a crashed run, or an app restart, abandons whatever's left of its claimed block of 50) —
+harmless here, since `id` is a surrogate key with no business meaning and sequences were never
+transactional to begin with (a rolled-back transaction doesn't return its claimed ids either).
+`reWriteBatchedInserts` and `hibernate.jdbc.batch_size` are easy to conflate but sit at different
+layers — one groups statements into JDBC `executeBatch()` calls (Hibernate/JDBC-API level), the other
+rewrites what such a batch looks like on the wire (pgjdbc driver level); turning on either alone would
+likely still help somewhat, but this investigation measured them only together, matching PLAN.md's
+four-row ask — isolating each one's individual share is a natural extension, not attempted here.
 
 ## 6. ORM vs native SQL
 

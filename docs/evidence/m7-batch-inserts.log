@@ -1,0 +1,100 @@
+M7 — JDBC batch inserts: Stage A (baseline) / Stage B (negative result) / Stage C (fix)
+curl -X POST "http://localhost:8080/api/statement-runs?period=2025-03&strategy=FETCH_JOIN&limitAccounts=20000"
+(Stage C repeats the same call with strategy=BATCHED once implemented.)
+
+=== Stage A — before: row-by-row save(), IDENTITY, no batch config ===
+--- Run 1 (cold) ---
+{"runId":7,"strategy":"FETCH_JOIN","accounts":13303,"statementsWritten":13303,"elapsedMs":47108,"statementsPerSec":282.3936486371742,"jdbcQueryCount":13325}
+curl_time_total: 47.380611s
+
+--- Run 2 (warm) ---
+{"runId":8,"strategy":"FETCH_JOIN","accounts":13303,"statementsWritten":13303,"elapsedMs":43451,"statementsPerSec":306.1609629237532,"jdbcQueryCount":13325}
+curl_time_total: 43.672429s
+
+13303 / 20000 = 66.5% coverage — same inner-join account-drop ratio as M4 (667/1000 = 66.7%),
+consistent: ~1/3 of accounts have zero transactions in March 2025 regardless of scale.
+
+=== Config change for Stage B (application.yaml, hibernate.* properties) ===
+spring.jpa.properties.hibernate.jdbc.batch_size: 50
+spring.jpa.properties.hibernate.order_inserts: true
+Statement.id is UNCHANGED — still @GeneratedValue(strategy = GenerationType.IDENTITY).
+
+App restart log (Hibernate 7.4.1.Final, HHH100501), proves the config loaded before Stage B ran:
+2026-07-12T06:34:57.402+03:00  INFO 15936 --- [statement-forge] [main] org.hibernate.orm.jdbc.batch : HHH100501: Automatic JDBC statement batching enabled (maximum batch size 50)
+2026-07-12T06:35:00.949+03:00  INFO 15936 --- [statement-forge] [main] c.m.s.StatementForgeApplication : Started StatementForgeApplication in 14.229 seconds (process running for 14.973)
+(PID 15936, port 8080 — confirmed via Get-NetTCPConnection, distinct from the prior session's PID 38592.)
+
+=== Stage B — batch_size=50 + order_inserts=true, IDENTITY still in place (EXPECT: no change) ===
+--- Run 1 ---
+{"runId":9,"strategy":"FETCH_JOIN","accounts":13303,"statementsWritten":13303,"elapsedMs":45658,"statementsPerSec":291.36186429541374,"jdbcQueryCount":13325}
+curl_time_total: 46.179023s
+
+--- Run 2 (warm) ---
+{"runId":10,"strategy":"FETCH_JOIN","accounts":13303,"statementsWritten":13303,"elapsedMs":43800,"statementsPerSec":303.72146118721463,"jdbcQueryCount":13325}
+curl_time_total: 44.015691s
+
+Warm-to-warm: Stage A 306.16 stmt/s vs Stage B 303.72 stmt/s -> -0.8%, i.e. flat/noise, not a
+real regression (Stage A's own cold->warm swing was +8.4%, so this is well inside natural
+run-to-run variance). jdbcQueryCount identical (13,325) in both stages -- the log config
+change did not even alter query *count*, only (attempted) execution grouping, and that
+grouping never took effect. This is the negative result: HHH logged "Automatic JDBC
+statement batching enabled" at boot, but IDENTITY silently prevents Hibernate from actually
+using it for these inserts (confirmed against hibernate-orm docs: "Hibernate disables insert
+batching at the JDBC level transparently if you use an identity identifier generator" --
+documentation/src/main/asciidoc/userguide/chapters/batch/Batching.adoc).
+
+=== Stage C fix: V4__statement_id_sequence.sql applied ===
+Migrating schema "public" to version "4 - statement id sequence"
++--------+
+| setval |
++--------+
+| 58214  |
++--------+
+Successfully applied 1 migration to schema "public", now at version v4 (execution time 00:00.063s)
+(58214 = MAX(id)+2 across every statement row IDENTITY had already written in M3/M4/Stage A/B.)
+
+Entity: @GeneratedValue(strategy = SEQUENCE, generator = "statement_seq")
+        @SequenceGenerator(name = "statement_seq", sequenceName = "statement_id_seq", allocationSize = 50)
+application.yaml datasource url: ...statementforge?reWriteBatchedInserts=true
+application.yaml logging: org.hibernate.orm.jdbc.batch: TRACE
+
+App restart proof (PID 23544, distinct from Stage B's PID 15936):
+2026-07-12T06:44:23.601+03:00  INFO 23544 --- [statement-forge] [main] o.f.core.internal.command.DbMigrate : Migrating schema "public" to version "4 - statement id sequence"
+2026-07-12T06:44:23.706+03:00  INFO 23544 --- [statement-forge] [main] o.f.core.internal.command.DbMigrate : Successfully applied 1 migration to schema "public", now at version v4 (execution time 00:00.063s)
+2026-07-12T06:44:27.662+03:00  INFO 23544 --- [statement-forge] [main] org.hibernate.orm.jdbc.batch : HHH100501: Automatic JDBC statement batching enabled (maximum batch size 50)
+2026-07-12T06:44:31.236+03:00  INFO 23544 --- [statement-forge] [main] c.m.s.StatementForgeApplication : Started StatementForgeApplication in 14.793 seconds (process running for 15.554)
+
+=== Stage C — BATCHED: SEQUENCE ids + batch_size=50 + order_inserts + reWriteBatchedInserts ===
+--- Run 1 (cold-ish, fresh process) ---
+{"runId":11,"strategy":"BATCHED","accounts":13303,"statementsWritten":13303,"elapsedMs":12302,"statementsPerSec":1081.3688831084378,"jdbcQueryCount":304}
+curl_time_total: 12.572636s
+
+--- Run 2 (warm) ---
+{"runId":12,"strategy":"BATCHED","accounts":13303,"statementsWritten":13303,"elapsedMs":11426,"statementsPerSec":1164.2744617538947,"jdbcQueryCount":303}
+curl_time_total: 11.447896s
+
+=== TRACE proof of real batching (org.hibernate.orm.jdbc.batch, run 2) ===
+2026-07-12T06:46:26.348+03:00 TRACE 23544 --- [statement-forge] [nio-8080-exec-1] org.hibernate.orm.jdbc.batch : Created JDBC batch (50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+2026-07-12T06:46:26.348+03:00 TRACE 23544 --- [statement-forge] [nio-8080-exec-1] org.hibernate.orm.jdbc.batch : Adding to JDBC batch (1 / 50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+... (48 more "Adding to JDBC batch (n / 50)" lines) ...
+2026-07-12T06:46:26.405+03:00 TRACE 23544 --- [statement-forge] [nio-8080-exec-1] org.hibernate.orm.jdbc.batch : Executing JDBC batch (50 / 50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+... (repeats for every 50 accumulated inserts) ...
+2026-07-12T06:46:37.781+03:00 TRACE 23544 --- [statement-forge] [nio-8080-exec-1] org.hibernate.orm.jdbc.batch : Executing JDBC batch (3 / 50) - [com.muiyurocodes.statementforge.domain.Statement#INSERT]
+2026-07-12T06:46:37.821+03:00 TRACE 23544 --- [statement-forge] [nio-8080-exec-1] org.hibernate.orm.jdbc.batch : Executing JDBC batch (1 / 50) - [com.muiyurocodes.statementforge.domain.StatementRun#UPDATE]
+
+NOTE: PLAN.md's expected log text was "Executing batch size: 50" — the real Hibernate
+7.4.1.Final message is "Executing JDBC batch (50 / 50) - [Entity#OPERATION]" (confirmed
+against the actual TRACE output, not assumed from the plan's paraphrase).
+
+Per-run batch count reconciliation (13,303 statement inserts @ batch_size=50, flushed
+every 1,000 entities): 13 full flushes x 20 batches-of-50 = 260, + 1 final flush of 303
+= 6 batches-of-50 + 1 batch-of-3 = 267 Statement#INSERT batches, + 1
+StatementRun#UPDATE batch-of-1 (the final status->COMPLETED save) = 268 total "Executing
+JDBC batch" lines per run. Grepped count: 536 across both runs = 268/run exactly.
+
+=== Summary: rows/sec across all four measured configurations (limitAccounts=20000, period=2025-03, warm runs) ===
+Strategy                                  | jdbcQueryCount | elapsedMs | statements/sec
+FETCH_JOIN (row-by-row, IDENTITY)         | 13,325         | 43,451    | 306.16
+FETCH_JOIN + batch_size=50 (IDENTITY)     | 13,325         | 43,800    | 303.72  <- negative result, -0.8% (noise)
+BATCHED (SEQUENCE + batch_size + rewrite) |    303         | 11,426    | 1,164.27  <- ~3.80x throughput, ~44x fewer queries
+

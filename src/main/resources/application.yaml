@@ -2,7 +2,11 @@ spring:
   application:
     name: statement-forge
   datasource:
-    url: jdbc:postgresql://localhost:5433/statementforge
+    # reWriteBatchedInserts=true (pgjdbc): rewrites a JDBC batch of single-row
+    # INSERTs into one multi-row "INSERT ... VALUES (...),(...)" statement —
+    # a driver-level optimization independent of, and on top of, Hibernate's
+    # own hibernate.jdbc.batch_size grouping. PLAN.md M7 Stage C.
+    url: jdbc:postgresql://localhost:5433/statementforge?reWriteBatchedInserts=true
     username: sf
     password: sf
   jpa:
@@ -12,6 +16,14 @@ spring:
       hibernate:
         format_sql: true
         generate_statistics: true   # enables Hibernate Statistics (query counts) for benchmarking
+        # PLAN.md M7 Stage B: batch_size + order_inserts ONLY — Statement.id is
+        # still IDENTITY at this point. Expected result: no improvement, because
+        # Hibernate disables JDBC insert batching transparently for IDENTITY
+        # generators (official docs, hibernate-orm Batching.adoc). Left in place
+        # (not reverted) once Stage C's SEQUENCE migration makes it effective.
+        jdbc:
+          batch_size: 50
+        order_inserts: true
     open-in-view: false        # surfaces N+1 instead of hiding it
   flyway:
     locations: classpath:db/migration
@@ -21,3 +33,6 @@ spring:
 logging:
   level:
     org.hibernate.SQL: DEBUG
+    # PLAN.md M7 Stage C: proves batching is REAL (not just "enabled" in the
+    # boot log) — logs one line per JDBC batch actually executed.
+    org.hibernate.orm.jdbc.batch: TRACE

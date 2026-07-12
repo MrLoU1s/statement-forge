@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -16,9 +17,14 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// id stays IDENTITY on purpose: Investigation 4 (M7) migrates it to a pooled
-// SEQUENCE (allocationSize matching V4's INCREMENT BY) to demonstrate the
-// IDENTITY-vs-SEQUENCE JDBC batching gotcha. Do not change this ahead of M7.
+// id migrated IDENTITY -> pooled SEQUENCE in M7 (V4__statement_id_sequence.sql)
+// specifically to unblock Hibernate JDBC insert batching: IDENTITY forces an
+// immediate per-row INSERT to read back the generated key, which silently
+// disables batching (measured negative result, PERFORMANCE.md SS5 Stage B).
+// allocationSize MUST match V4's `INCREMENT BY 50` — the pooled optimizer
+// pre-allocates a block of ids from one nextval() call so inserts need no
+// per-row round trip. Id gaps on restart/crash are an accepted trade (see
+// DECISIONS.md D5).
 @Entity
 @Table(name = "statement")
 @Getter
@@ -27,7 +33,8 @@ import java.time.LocalDate;
 public class Statement {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "statement_seq")
+    @SequenceGenerator(name = "statement_seq", sequenceName = "statement_id_seq", allocationSize = 50)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
