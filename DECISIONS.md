@@ -148,7 +148,91 @@ between "this join drops rows with no match" and "this filter zeroes an aggregat
 unprompted.
 
 ## D9 — Optimistic locking + isolation level for the batch
-<!-- TODO(M9): why READ COMMITTED suffices; when REPEATABLE READ would matter -->
+`PATCH /api/statement-runs/{id}` (status transition) is the *only* read-modify-write-the-
+same-row path in this app — confirmed by grepping for it: nothing else loads a row,
+mutates it, and writes it back conditioned on what it just read. That fact is what
+scopes this whole decision.
+
+**Why Postgres's default READ COMMITTED suffices, everywhere else.** The statement
+generators (NAIVE/FETCH_JOIN/BATCHED/NATIVE_SQL) only ever *read* `transaction` rows
+(write-once via V2's seed, never updated by this app) and *insert* new `statement`
+rows — no query anywhere reads a row and later writes that same row conditioned on the
+read. READ COMMITTED's one guarantee that matters here — every statement sees the
+latest committed data as of *that statement's* start — is exactly enough for a
+pure read-then-append pipeline. Two people accidentally kicking off the same period's
+batch twice isn't an isolation-level problem either: each run gets its own
+`statement_run` header and writes its own `statement` rows, both individually valid;
+preventing the double-run is an application-level concern (e.g. a uniqueness
+constraint or an existing-non-terminal-run check), not something a stronger isolation
+level would fix — two well-formed transactions running concurrently *are* what READ
+COMMITTED (or even SERIALIZABLE) is supposed to allow.
+
+**The header's lost-update risk — covered by `@Version`, not by isolation level.**
+This is the one place two concurrent writers can race on the *same* row. Verified
+empirically, not assumed, via two different real reproductions (both logged in
+`docs/evidence/`):
+1. `StatementRunOptimisticLockingTests` (Testcontainers): two `TransactionTemplate`
+   blocks load the same run at version 0, both mutate, first `saveAndFlush` commits
+   (version 0→1). The **second** `saveAndFlush` throws
+   `ObjectOptimisticLockingFailureException` — but the log shows this fires during
+   `EntityManager.merge()`'s own version pre-check (a `SELECT` reloads the row, then
+   the exception raises *immediately* — no second `UPDATE` is ever prepared). Expected
+   the textbook "0 rows updated" mechanism going in; the actual log corrected that
+   assumption before it went in this file, same discipline as D8.
+2. Two genuinely concurrent live `PATCH` requests against the running app
+   (`Start-Job` in PowerShell, same run id, no artificial delay needed): the winner
+   returns `200` (version 2→3); the loser's request *does* reach a real, executed
+   `UPDATE statement_run SET ..., version=? WHERE id=? AND version=?` — Hibernate logs
+   `Aborting JDBC batch` / `HHH100503: JDBC batch still contained JDBC statements on
+   release` the instant that `UPDATE` matches zero rows, and the loser gets a real
+   `409` from `GlobalExceptionHandler`. **This is the textbook WHERE-clause mechanism
+   PLAN.md's interview checklist describes** — it just isn't the one the *first*
+   (Testcontainers, detached-entity) reproduction happened to hit. Same `@Version`
+   guarantee, two different Hibernate code paths depending on whether the losing
+   write goes through `merge()` on a detached copy or executes directly from an
+   already-managed entity in its own live transaction — worth being able to name the
+   difference cold, not just recite "the version check fails."
+
+Either way, the mechanism that actually prevents the lost update is the version
+column in the `WHERE` clause (or `merge()`'s equivalent pre-check), not the isolation
+level — READ COMMITTED is sufficient because the check is embedded in *data*
+(`statement_run.version`), not in database-enforced snapshot/serialization machinery.
+Proof: a bare `UPDATE statement_run SET status=? WHERE id=?` with no version predicate
+would, under READ COMMITTED, let the second writer's update proceed against the
+already-updated row and silently win — Postgres's documented read-committed behavior
+for a writer that blocks behind a concurrent committed update is to re-check its
+`WHERE` clause against the *new* row version and, if it still matches, apply the
+write — a true silent lost update, no error at all. `@Version` is what turns that
+silent overwrite into a detectable, rejectable conflict.
+
+**When REPEATABLE READ would matter.** If a single logical operation needed *multiple*
+queries against concurrently-mutating data to be mutually consistent as of one instant
+— e.g. computing `total_debits` and `total_credits` via two separate `SELECT`s that
+both must reflect the exact same snapshot even while unrelated transactions are being
+inserted mid-batch — READ COMMITTED would not guarantee that (each statement gets its
+*own* fresh snapshot, so a row inserted between the two queries could show up in the
+second but not the first). This project doesn't need that because it avoids the
+multi-query dependency rather than out-isolating it: M8's native aggregation computes
+`total_debits`, `total_credits`, and `closing_balance` as three `FILTER`ed `SUM`s in
+**one** `SELECT`, so they share one statement's snapshot by construction — a design
+choice, not a REPEATABLE READ requirement. REPEATABLE READ (or SERIALIZABLE, if
+write-skew across *multiple related rows* were the risk) would become the right tool
+if `transaction` rows ever became mutable in a live system (corrections/reversals) and
+a batch needed a stable "ledger as of period end" view while writes were concurrently
+landing — not a risk against this project's write-once seed data today.
+
+**What a serialization failure would force.** Postgres raises `40001
+serialization_failure` under REPEATABLE READ/SERIALIZABLE when it can't guarantee
+correctness for a conflicting transaction — the documented, required response is to
+retry the **entire transaction** from the start (the whole snapshot is stale, not just
+one row), typically transparently, in a retry loop the app controls. That's a
+different contract from `@Version`'s `409`: a serialization failure means "the
+database couldn't prove this was safe, try again," meant to be retried automatically;
+an optimistic-lock `409` on a `statement_run` status transition means "a specific
+person or process already changed this specific business decision," which this app
+deliberately does **not** auto-retry — it surfaces the conflict to the caller instead,
+since silently retrying an approval over the top of someone else's already-applied
+status change would paper over a real business conflict, not a transient one.
 
 ## D10 — Spring Boot 4.1 (not 3.x)
 The Initializr scaffold came out on Boot 4.1.0 GA. Everything demonstrated here (JPA,

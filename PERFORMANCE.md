@@ -15,7 +15,7 @@
 | 3 | OFFSET deep pagination | 115.1ms DB / 123.2ms API @ depth 10k (offset 500k) | 0.218ms DB / 13.7ms API, flat at any depth | [§4](#4-pagination) |
 | 4 | Row-by-row inserts (IDENTITY) | 306.16 rows/s (batch_size=50 alone: 303.72, no change) | 1,164.27 rows/s (SEQUENCE + batch + rewrite) | [§5](#5-batch-inserts) |
 | 5 | ORM loop vs set-based native SQL | 11,426ms @ 20k accts (BATCHED, §5) | 2,071ms @ 20k accts (full 200k: 9,602ms) | [§6](#6-orm-vs-native-sql) |
-| 6 | Lost update on run status | — | version conflict → 409 | [§7](#7-optimistic-locking) |
+| 6 | Lost update on run status | bare read-modify-write: silent overwrite, no error, no detection | `@Version`-guarded `PATCH`: concurrent writers → 200 (winner, version 2→3) / 409 (loser) | [§7](#7-optimistic-locking) |
 
 ## Dataset
 
@@ -845,4 +845,99 @@ is not a scoped decision, it's an all-or-nothing one for whatever query you writ
 
 ## 7. Optimistic locking
 
-<!-- TODO(M9): conflict demo output + isolation note pointer -->
+**Symptom (hypothetical, guarded against before it could happen).** `statement_run` is
+the one row two different actors can legitimately race on: two people (or a person and
+an automated retry) approving/rejecting the same batch run's status at close to the
+same time. A naive `PATCH` — read the row, mutate `status`, write it back — has no way
+to notice that the row it's about to overwrite isn't the row it read anymore. Whichever
+write lands last silently wins; the other caller's decision vanishes with no error, no
+log line, nothing to investigate later. `StatementRun.version` (`@Version`, M1) exists
+specifically to turn that silent loss into something detectable.
+
+**Hypothesis.** Wiring a real status-transition endpoint through JPA's standard
+`@Version` machinery should make Hibernate emit `UPDATE ... WHERE id=? AND version=?`
+instead of a bare `WHERE id=?`, and a losing concurrent writer should get a real,
+catchable exception instead of a silent overwrite — provided something maps that
+exception to a response the caller can act on.
+
+**Build.** `PATCH /api/statement-runs/{id}` (`StatementRunController.updateStatus`,
+`@Transactional`): find-by-id, mutate `status`, `saveAndFlush`.
+`GlobalExceptionHandler` (`@RestControllerAdvice`) maps
+`org.springframework.orm.ObjectOptimisticLockingFailureException` → `409` via a
+`ProblemDetail` body (RFC 9457). No new Flyway migration — `statement_run.version` has
+carried `@Version` since V1/M1; this milestone is the first code path that actually
+exercises it.
+
+**Measurement — two independent, real reproductions** (full logs in
+[`docs/evidence/m9-optimistic-locking-test.log`](docs/evidence/m9-optimistic-locking-test.log)):
+
+1. **`StatementRunOptimisticLockingTests`** (Testcontainers, deterministic — chosen over
+   racing raw HTTP requests because it needs no artificial delay to force the
+   interleaving): two `TransactionTemplate` blocks load the same run at `version=0`;
+   both mutate; the first `saveAndFlush` commits (`version` 0→1); the second throws.
+   ```
+   [INFO] Running com.muiyurocodes.statementforge.StatementRunOptimisticLockingTests
+   ...
+   Isolation level: READ_COMMITTED [default READ_COMMITTED]
+   ...
+   [INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 116.8 s
+   [INFO] BUILD SUCCESS
+   ```
+   The log holds a genuine surprise: the second `saveAndFlush` throws
+   `ObjectOptimisticLockingFailureException` right after its `SELECT` — **no second
+   `UPDATE` is ever prepared.** `EntityManager.merge()` compares the detached entity's
+   `version` against the freshly-reloaded row and raises the conflict itself, before
+   building any `UPDATE` at all. I expected the textbook "`UPDATE` runs, 0 rows
+   affected" story going in; the log corrected that before it reached this file.
+
+2. **Two genuinely concurrent live `PATCH`es** against the running dev app (PowerShell
+   `Start-Job`, same run id, no artificial delay — reproduced first try):
+   ```
+   --- Job 1 (status=APPROVED_A) ---
+   {"runId":31,...,"status":"APPROVED_A","version":3,"statementsWritten":1}
+   HTTP_STATUS:200
+
+   --- Job 2 (status=APPROVED_B) ---
+   {"detail":"The resource was modified concurrently; reread and retry.","instance":"/api/statement-runs/31","status":409,"title":"Conflict"}
+   HTTP_STATUS:409
+   ```
+   Here the log shows the *other* mechanism — the one PLAN.md's interview checklist
+   actually describes: the loser's request reaches a real, executed `UPDATE`, which
+   Hibernate aborts the instant it matches zero rows:
+   ```
+   update
+       statement_run
+   set
+       channel=?, run_date=?, status=?, version=?
+   where
+       id=?
+       and version=?
+   ...
+   Aborting JDBC batch - [...StatementRun#UPDATE]
+   HHH100503: JDBC batch still contained JDBC statements on release
+   ```
+   Same `UPDATE ... WHERE id=? AND version=?` shape as every successful write (the
+   happy-path version bump on `runId=31`, captured live: `version` 1→2 on the first
+   real `PATCH`, 2→3 on the winning concurrent one) — the only difference between a
+   normal write and a rejected one is whether that `WHERE` clause still matches
+   anything by the time it executes.
+
+**Result.** Both reproductions land on the same outcome — a losing concurrent writer
+gets `ObjectOptimisticLockingFailureException`, mapped to `409` — via two *different*
+Hibernate code paths: a `merge()`-time pre-check on a detached, re-attached entity
+(reproduction 1) versus an executed-then-rejected `UPDATE` on two live, already-managed
+entities racing in their own transactions (reproduction 2). Both are real; neither is
+"the" mechanism — which one fires depends on how the losing write reaches Hibernate,
+not on `@Version` itself, which is the same one column doing the same one job in both
+cases.
+
+**What I learned.** I went in assuming a single, textbook mechanism ("the `UPDATE`
+runs, 0 rows match, exception") and PLAN.md's own interview checklist is written that
+way too. Reproducing it two different real ways — one deliberately deterministic, one
+a genuine live race — surfaced that Hibernate actually has *two* distinct code paths to
+the same exception type, and the deterministic test happened to hit the one I wasn't
+expecting. That's a better interview answer than either reproduction alone would have
+been: not just "here's proof it works" but "here's proof, and here's why proof #1 and
+proof #2 don't look identical at the SQL level even though they're the same guarantee."
+Isolation-level reasoning (why `READ COMMITTED` is enough, when it wouldn't be) is in
+[`DECISIONS.md` D9](DECISIONS.md#d9--optimistic-locking--isolation-level-for-the-batch).

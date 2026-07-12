@@ -1,0 +1,236 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------< com.muiyurocodes:statement-forge >------------------
+[INFO] Building statement-forge 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.5.0:resources (default-resources) @ statement-forge ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 4 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ statement-forge ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.5.0:testResources (default-testResources) @ statement-forge ---
+[INFO] skip non existing resourceDirectory C:\Users\Muiyuro\Documents\Cincom JD Project\Cincom_JD_Project\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ statement-forge ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.6:test (default-test) @ statement-forge ---
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-api/3.5.6/surefire-api-3.5.6.jar
+Progress (1): 0.9/174 kBProgress (1): 2.3/174 kBProgress (1): 3.6/174 kBProgress (1): 5.0/174 kBProgress (1): 6.4/174 kBProgress (1): 7.7/174 kBProgress (1): 9.1/174 kBProgress (1): 10/174 kB Progress (1): 12/174 kBProgress (1): 13/174 kBProgress (1): 15/174 kBProgress (1): 16/174 kBProgress (1): 17/174 kBProgress (1): 19/174 kBProgress (1): 20/174 kBProgress (1): 21/174 kBProgress (1): 23/174 kBProgress (1): 24/174 kBProgress (1): 26/174 kBProgress (1): 27/174 kBProgress (1): 28/174 kBProgress (1): 30/174 kBProgress (1): 31/174 kBProgress (1): 32/174 kBProgress (1): 34/174 kBProgress (1): 35/174 kBProgress (1): 36/174 kBProgress (1): 38/174 kBProgress (1): 39/174 kBProgress (1): 41/174 kBProgress (1): 42/174 kBProgress (1): 43/174 kBProgress (1): 45/174 kBProgress (1): 46/174 kBProgress (1): 47/174 kBProgress (1): 49/174 kBProgress (1): 50/174 kBProgress (1): 52/174 kBProgress (1): 53/174 kBProgress (1): 54/174 kBProgress (1): 56/174 kBProgress (1): 60/174 kBProgress (1): 64/174 kBProgress (1): 68/174 kBProgress (1): 73/174 kBProgress (1): 77/174 kBProgress (1): 81/174 kBProgress (1): 85/174 kBProgress (1): 89/174 kBProgress (1): 94/174 kBProgress (1): 98/174 kBProgress (1): 102/174 kBProgress (1): 106/174 kBProgress (1): 111/174 kBProgress (1): 115/174 kBProgress (1): 119/174 kBProgress (1): 123/174 kBProgress (1): 128/174 kBProgress (1): 131/174 kBProgress (1): 135/174 kBProgress (1): 139/174 kBProgress (1): 143/174 kBProgress (1): 147/174 kBProgress (1): 152/174 kBProgress (1): 156/174 kBProgress (1): 160/174 kBProgress (1): 164/174 kBProgress (1): 169/174 kBProgress (1): 173/174 kBProgress (1): 174 kB                        Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-api/3.5.6/surefire-api-3.5.6.jar (174 kB at 106 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-logger-api/3.5.6/surefire-logger-api-3.5.6.jar
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-shared-utils/3.5.6/surefire-shared-utils-3.5.6.jar
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-extensions-api/3.5.6/surefire-extensions-api-3.5.6.jar
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/maven-surefire-common/3.5.6/maven-surefire-common-3.5.6.jar
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-booter/3.5.6/surefire-booter-3.5.6.jar
+Progress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0/3.0 MBProgress (1): 0.1/3.0 MBProgress (1): 0.1/3.0 MBProgress (1): 0.1/3.0 MBProgress (1): 0.1/3.0 MBProgress (1): 0.1/3.0 MBProgress (1): 0.1/3.0 MBProgress (1): 0.2/3.0 MBProgress (1): 0.2/3.0 MBProgress (1): 0.2/3.0 MBProgress (1): 0.2/3.0 MBProgress (1): 0.2/3.0 MBProgress (1): 0.2/3.0 MBProgress (1): 0.3/3.0 MBProgress (1): 0.3/3.0 MBProgress (1): 0.3/3.0 MBProgress (1): 0.3/3.0 MBProgress (1): 0.3/3.0 MBProgress (1): 0.3/3.0 MBProgress (1): 0.4/3.0 MBProgress (1): 0.4/3.0 MBProgress (1): 0.4/3.0 MBProgress (1): 0.4/3.0 MBProgress (1): 0.4/3.0 MBProgress (1): 0.4/3.0 MBProgress (1): 0.5/3.0 MBProgress (1): 0.5/3.0 MBProgress (1): 0.5/3.0 MBProgress (1): 0.5/3.0 MBProgress (1): 0.5/3.0 MBProgress (1): 0.5/3.0 MBProgress (1): 0.5/3.0 MBProgress (1): 0.6/3.0 MBProgress (1): 0.6/3.0 MBProgress (2): 0.6/3.0 MB | 0.9/26 kBProgress (2): 0.6/3.0 MB | 2.3/26 kBProgress (2): 0.6/3.0 MB | 3.6/26 kBProgress (2): 0.6/3.0 MB | 5.0/26 kBProgress (2): 0.6/3.0 MB | 6.4/26 kBProgress (2): 0.6/3.0 MB | 7.7/26 kBProgress (2): 0.6/3.0 MB | 9.1/26 kBProgress (2): 0.6/3.0 MB | 10/26 kB Progress (2): 0.6/3.0 MB | 12/26 kBProgress (2): 0.6/3.0 MB | 13/26 kBProgress (2): 0.6/3.0 MB | 15/26 kBProgress (2): 0.6/3.0 MB | 15/26 kBProgress (2): 0.6/3.0 MB | 15/26 kBProgress (2): 0.6/3.0 MB | 17/26 kBProgress (2): 0.6/3.0 MB | 18/26 kBProgress (2): 0.6/3.0 MB | 20/26 kBProgress (2): 0.6/3.0 MB | 20/26 kBProgress (3): 0.6/3.0 MB | 20/26 kB | 0.9/123 kBProgress (4): 0.6/3.0 MB | 20/26 kB | 0.9/123 kB | 0.9/317 kBProgress (4): 0.6/3.0 MB | 20/26 kB | 2.3/123 kB | 0.9/317 kBProgress (4): 0.6/3.0 MB | 20/26 kB | 2.3/123 kB | 2.3/317 kBProgress (4): 0.6/3.0 MB | 21/26 kB | 2.3/123 kB | 2.3/317 kBProgress (4): 0.6/3.0 MB | 21/26 kB | 3.2/123 kB | 2.3/317 kBProgress (4): 0.6/3.0 MB | 21/26 kB | 3.2/123 kB | 3.6/317 kBProgress (4): 0.6/3.0 MB | 22/26 kB | 3.2/123 kB | 3.6/317 kBProgress (4): 0.6/3.0 MB | 24/26 kB | 3.2/123 kB | 3.6/317 kBProgress (4): 0.6/3.0 MB | 24/26 kB | 4.5/123 kB | 3.6/317 kBProgress (4): 0.6/3.0 MB | 25/26 kB | 4.5/123 kB | 3.6/317 kBProgress (4): 0.6/3.0 MB | 25/26 kB | 5.9/123 kB | 3.6/317 kBProgress (4): 0.6/3.0 MB | 25/26 kB | 5.9/123 kB | 5.0/317 kBProgress (4): 0.6/3.0 MB | 25/26 kB | 5.9/123 kB | 5.0/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 5.9/123 kB | 5.0/317 kB   Progress (4): 0.6/3.0 MB | 26 kB | 7.3/123 kB | 5.0/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 7.3/123 kB | 6.4/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 8.7/123 kB | 6.4/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 8.7/123 kB | 7.7/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 10/123 kB | 7.7/317 kB Progress (4): 0.6/3.0 MB | 26 kB | 10/123 kB | 9.1/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 11/123 kB | 9.1/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 13/123 kB | 9.1/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 13/123 kB | 10/317 kB Progress (4): 0.6/3.0 MB | 26 kB | 14/123 kB | 10/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 14/123 kB | 12/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 15/123 kB | 12/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 15/123 kB | 13/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 17/123 kB | 13/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 17/123 kB | 15/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 18/123 kB | 15/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 18/123 kB | 16/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 20/123 kB | 16/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 20/123 kB | 17/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 20/123 kB | 19/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 21/123 kB | 19/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 21/123 kB | 20/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 21/123 kB | 21/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 22/123 kB | 21/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 22/123 kB | 23/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 22/123 kB | 24/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 22/123 kB | 25/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 22/123 kB | 26/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 22/123 kB | 27/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 24/123 kB | 27/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 24/123 kB | 29/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 25/123 kB | 29/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 25/123 kB | 30/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 26/123 kB | 30/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 26/123 kB | 31/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 26/123 kB | 31/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 28/123 kB | 31/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 28/123 kB | 33/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 29/123 kB | 33/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 29/123 kB | 34/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 31/123 kB | 34/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 31/123 kB | 36/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 32/123 kB | 36/317 kBProgress (4): 0.6/3.0 MB | 26 kB | 33/123 kB | 36/317 kBProgress (4): 0.7/3.0 MB | 26 kB | 33/123 kB | 36/317 kBProgress (5): 0.7/3.0 MB | 26 kB | 33/123 kB | 36/317 kB | 0.9/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 33/123 kB | 37/317 kB | 0.9/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 35/123 kB | 37/317 kB | 0.9/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 35/123 kB | 37/317 kB | 2.3/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 35/123 kB | 38/317 kB | 2.3/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 36/123 kB | 38/317 kB | 2.3/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 36/123 kB | 38/317 kB | 3.6/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 36/123 kB | 40/317 kB | 3.6/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 37/123 kB | 40/317 kB | 3.6/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 37/123 kB | 41/317 kB | 3.6/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 37/123 kB | 41/317 kB | 5.0/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 39/123 kB | 41/317 kB | 5.0/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 39/123 kB | 41/317 kB | 5.0/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 39/123 kB | 42/317 kB | 5.0/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 40/123 kB | 42/317 kB | 5.0/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 40/123 kB | 42/317 kB | 6.4/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 40/123 kB | 44/317 kB | 6.4/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 42/123 kB | 44/317 kB | 6.4/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 42/123 kB | 44/317 kB | 7.7/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 42/123 kB | 45/317 kB | 7.7/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 45/317 kB | 7.7/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 45/317 kB | 9.1/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 46/317 kB | 9.1/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 46/317 kB | 10/14 kB Progress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 48/317 kB | 10/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 48/317 kB | 11/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 48/317 kB | 13/14 kBProgress (5): 0.7/3.0 MB | 26 kB | 43/123 kB | 48/317 kB | 14 kB                                                                   Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-extensions-api/3.5.6/surefire-extensions-api-3.5.6.jar (26 kB at 50 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-extensions-spi/3.5.6/surefire-extensions-spi-3.5.6.jar
+Progress (4): 0.7/3.0 MB | 43/123 kB | 49/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 44/123 kB | 49/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 44/123 kB | 51/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 46/123 kB | 51/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 46/123 kB | 51/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 47/123 kB | 51/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 48/123 kB | 51/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 48/123 kB | 52/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 50/123 kB | 52/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 51/123 kB | 52/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 51/123 kB | 53/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 51/123 kB | 53/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 51/123 kB | 55/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 52/123 kB | 55/317 kB | 14 kBProgress (4): 0.7/3.0 MB | 52/123 kB | 59/317 kB | 14 kB                                                        Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-logger-api/3.5.6/surefire-logger-api-3.5.6.jar (14 kB at 26 kB/s)
+Progress (3): 0.7/3.0 MB | 52/123 kB | 63/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 67/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 72/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 76/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 80/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 84/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 89/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 93/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 97/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 101/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 105/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 110/317 kBProgress (3): 0.7/3.0 MB | 52/123 kB | 114/317 kBProgress (3): 0.7/3.0 MB | 54/123 kB | 114/317 kBProgress (3): 0.7/3.0 MB | 54/123 kB | 118/317 kBProgress (3): 0.7/3.0 MB | 55/123 kB | 118/317 kBProgress (3): 0.7/3.0 MB | 55/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 59/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 61/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 65/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 66/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 70/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 74/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 78/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 82/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 86/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 90/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 95/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 99/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 103/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 107/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 112/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 116/123 kB | 122/317 kBProgress (4): 0.7/3.0 MB | 116/123 kB | 122/317 kB | 0.9/8.2 kBProgress (4): 0.7/3.0 MB | 116/123 kB | 122/317 kB | 2.3/8.2 kBProgress (4): 0.7/3.0 MB | 116/123 kB | 122/317 kB | 3.6/8.2 kBProgress (4): 0.7/3.0 MB | 116/123 kB | 122/317 kB | 5.0/8.2 kBProgress (4): 0.7/3.0 MB | 116/123 kB | 122/317 kB | 6.4/8.2 kBProgress (4): 0.7/3.0 MB | 116/123 kB | 122/317 kB | 7.7/8.2 kBProgress (4): 0.7/3.0 MB | 116/123 kB | 122/317 kB | 8.2 kB                                                               Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-extensions-spi/3.5.6/surefire-extensions-spi-3.5.6.jar (8.2 kB at 12 kB/s)
+Progress (3): 0.7/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.7/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.8/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.8/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.8/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.8/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.8/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.8/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.9/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.9/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.9/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.9/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.9/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 0.9/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.0/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.0/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.0/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.0/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.0/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.0/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.0/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.1/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.1/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.1/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.1/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.1/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.1/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.2/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.2/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.2/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.2/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.2/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.2/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.3/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.3/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.3/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.3/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.3/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.3/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.4/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.4/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.4/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.4/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.4/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.4/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.5/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.5/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.5/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.5/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.5/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.5/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 122/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 127/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 131/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 131/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 131/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 131/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 135/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 135/317 kBProgress (3): 1.6/3.0 MB | 116/123 kB | 135/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 135/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 135/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 139/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 144/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 144/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 144/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 144/317 kBProgress (3): 1.7/3.0 MB | 116/123 kB | 144/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 144/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 144/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 148/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 152/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 156/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 160/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 164/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 168/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 173/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 177/317 kBProgress (3): 1.8/3.0 MB | 116/123 kB | 181/317 kBProgress (3): 1.8/3.0 MB | 120/123 kB | 181/317 kBProgress (3): 1.8/3.0 MB | 120/123 kB | 185/317 kBProgress (3): 1.8/3.0 MB | 123 kB | 185/317 kB    Progress (3): 1.8/3.0 MB | 123 kB | 189/317 kBProgress (3): 1.8/3.0 MB | 123 kB | 194/317 kBProgress (3): 1.8/3.0 MB | 123 kB | 198/317 kBProgress (3): 1.8/3.0 MB | 123 kB | 202/317 kB                                              Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-booter/3.5.6/surefire-booter-3.5.6.jar (123 kB at 151 kB/s)
+Progress (2): 1.8/3.0 MB | 206/317 kBProgress (2): 1.8/3.0 MB | 211/317 kBProgress (2): 1.8/3.0 MB | 215/317 kBProgress (2): 1.8/3.0 MB | 219/317 kBProgress (2): 1.8/3.0 MB | 223/317 kBProgress (2): 1.8/3.0 MB | 223/317 kBProgress (2): 1.8/3.0 MB | 223/317 kBProgress (2): 1.8/3.0 MB | 240/317 kBProgress (2): 1.8/3.0 MB | 240/317 kBProgress (2): 1.8/3.0 MB | 240/317 kBProgress (2): 1.9/3.0 MB | 240/317 kBProgress (2): 1.9/3.0 MB | 240/317 kBProgress (2): 1.9/3.0 MB | 256/317 kBProgress (2): 1.9/3.0 MB | 256/317 kBProgress (2): 1.9/3.0 MB | 256/317 kBProgress (2): 1.9/3.0 MB | 256/317 kBProgress (2): 1.9/3.0 MB | 256/317 kBProgress (2): 1.9/3.0 MB | 256/317 kBProgress (2): 2.0/3.0 MB | 256/317 kBProgress (2): 2.0/3.0 MB | 256/317 kBProgress (2): 2.0/3.0 MB | 256/317 kBProgress (2): 2.0/3.0 MB | 256/317 kBProgress (2): 2.0/3.0 MB | 256/317 kBProgress (2): 2.0/3.0 MB | 256/317 kBProgress (2): 2.1/3.0 MB | 256/317 kBProgress (2): 2.1/3.0 MB | 256/317 kBProgress (2): 2.1/3.0 MB | 256/317 kBProgress (2): 2.1/3.0 MB | 256/317 kBProgress (2): 2.1/3.0 MB | 256/317 kBProgress (2): 2.1/3.0 MB | 256/317 kBProgress (2): 2.2/3.0 MB | 256/317 kBProgress (2): 2.2/3.0 MB | 256/317 kBProgress (2): 2.2/3.0 MB | 256/317 kBProgress (2): 2.2/3.0 MB | 256/317 kBProgress (2): 2.2/3.0 MB | 256/317 kBProgress (2): 2.2/3.0 MB | 256/317 kBProgress (2): 2.3/3.0 MB | 256/317 kBProgress (2): 2.3/3.0 MB | 256/317 kBProgress (2): 2.3/3.0 MB | 256/317 kBProgress (2): 2.3/3.0 MB | 256/317 kBProgress (2): 2.3/3.0 MB | 256/317 kBProgress (2): 2.3/3.0 MB | 256/317 kBProgress (2): 2.4/3.0 MB | 256/317 kBProgress (2): 2.4/3.0 MB | 256/317 kBProgress (2): 2.4/3.0 MB | 256/317 kBProgress (2): 2.4/3.0 MB | 256/317 kBProgress (2): 2.4/3.0 MB | 256/317 kBProgress (2): 2.4/3.0 MB | 256/317 kBProgress (2): 2.5/3.0 MB | 256/317 kBProgress (2): 2.5/3.0 MB | 256/317 kBProgress (2): 2.5/3.0 MB | 256/317 kBProgress (2): 2.5/3.0 MB | 256/317 kBProgress (2): 2.5/3.0 MB | 256/317 kBProgress (2): 2.5/3.0 MB | 256/317 kBProgress (2): 2.6/3.0 MB | 256/317 kBProgress (2): 2.6/3.0 MB | 256/317 kBProgress (2): 2.6/3.0 MB | 256/317 kBProgress (2): 2.6/3.0 MB | 256/317 kBProgress (2): 2.6/3.0 MB | 256/317 kBProgress (2): 2.6/3.0 MB | 256/317 kBProgress (2): 2.7/3.0 MB | 256/317 kBProgress (2): 2.7/3.0 MB | 272/317 kBProgress (2): 2.7/3.0 MB | 272/317 kBProgress (2): 2.7/3.0 MB | 272/317 kBProgress (2): 2.7/3.0 MB | 272/317 kBProgress (2): 2.7/3.0 MB | 272/317 kBProgress (2): 2.7/3.0 MB | 272/317 kBProgress (2): 2.8/3.0 MB | 272/317 kBProgress (2): 2.8/3.0 MB | 272/317 kBProgress (2): 2.8/3.0 MB | 287/317 kBProgress (2): 2.8/3.0 MB | 303/317 kBProgress (2): 2.8/3.0 MB | 317 kB                                     Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/maven-surefire-common/3.5.6/maven-surefire-common-3.5.6.jar (317 kB at 332 kB/s)
+Progress (1): 2.8/3.0 MBProgress (1): 2.8/3.0 MBProgress (1): 2.8/3.0 MBProgress (1): 2.8/3.0 MBProgress (1): 2.9/3.0 MBProgress (1): 2.9/3.0 MBProgress (1): 2.9/3.0 MBProgress (1): 2.9/3.0 MBProgress (1): 2.9/3.0 MBProgress (1): 2.9/3.0 MBProgress (1): 2.9/3.0 MBProgress (1): 3.0/3.0 MBProgress (1): 3.0/3.0 MBProgress (1): 3.0 MB                        Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-shared-utils/3.5.6/surefire-shared-utils-3.5.6.jar (3.0 MB at 2.9 MB/s)
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-junit-platform/3.5.6/surefire-junit-platform-3.5.6.pom
+Progress (1): 833 BProgress (1): 3.9 kBProgress (1): 5.2 kB                    Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-junit-platform/3.5.6/surefire-junit-platform-3.5.6.pom (5.2 kB at 28 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-providers/3.5.6/surefire-providers-3.5.6.pom
+Progress (1): 844 BProgress (1): 2.5 kB                    Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-providers/3.5.6/surefire-providers-3.5.6.pom (2.5 kB at 14 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/common-java5/3.5.6/common-java5-3.5.6.pom
+Progress (1): 844 BProgress (1): 2.8 kBProgress (1): 3.1 kB                    Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/common-java5/3.5.6/common-java5-3.5.6.pom (3.1 kB at 17 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-junit-platform/3.5.6/surefire-junit-platform-3.5.6.jar
+Progress (1): 7.7/35 kBProgress (1): 16/35 kB Progress (1): 24/35 kBProgress (1): 35 kB                      Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/surefire-junit-platform/3.5.6/surefire-junit-platform-3.5.6.jar (35 kB at 203 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/common-java5/3.5.6/common-java5-3.5.6.jar
+Progress (1): 3.2/18 kBProgress (1): 18 kB                       Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/surefire/common-java5/3.5.6/common-java5-3.5.6.jar (18 kB at 101 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-launcher/6.0.3/junit-platform-launcher-6.0.3.pom
+Progress (1): 971 BProgress (1): 3.2 kB                    Downloaded from central: https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-launcher/6.0.3/junit-platform-launcher-6.0.3.pom (3.2 kB at 18 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-launcher/6.0.3/junit-platform-launcher-6.0.3.jar
+Progress (1): 7.7/246 kBProgress (1): 16/246 kB Progress (1): 24/246 kBProgress (1): 40/246 kBProgress (1): 57/246 kBProgress (1): 73/246 kBProgress (1): 90/246 kBProgress (1): 106/246 kBProgress (1): 122/246 kBProgress (1): 139/246 kBProgress (1): 155/246 kBProgress (1): 172/246 kBProgress (1): 188/246 kBProgress (1): 204/246 kBProgress (1): 221/246 kBProgress (1): 237/246 kBProgress (1): 246 kB                        Downloaded from central: https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-launcher/6.0.3/junit-platform-launcher-6.0.3.jar (246 kB at 1.3 MB/s)
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.muiyurocodes.statementforge.StatementRunOptimisticLockingTests
+12:31:18.901 [main] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [com.muiyurocodes.statementforge.StatementRunOptimisticLockingTests]: StatementRunOptimisticLockingTests does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+12:31:19.224 [main] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration com.muiyurocodes.statementforge.StatementForgeApplication for test class com.muiyurocodes.statementforge.StatementRunOptimisticLockingTests
+12:31:19.407 [main] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [com.muiyurocodes.statementforge.StatementRunOptimisticLockingTests]: StatementRunOptimisticLockingTests does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+12:31:19.415 [main] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration com.muiyurocodes.statementforge.StatementForgeApplication for test class com.muiyurocodes.statementforge.StatementRunOptimisticLockingTests
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-07-12T12:31:20.469+03:00  INFO 26468 --- [statement-forge] [           main] c.m.s.StatementRunOptimisticLockingTests : Starting StatementRunOptimisticLockingTests using Java 23.0.2 with PID 26468 (started by Muiyuro in C:\Users\Muiyuro\Documents\Cincom JD Project\Cincom_JD_Project)
+2026-07-12T12:31:20.474+03:00  INFO 26468 --- [statement-forge] [           main] c.m.s.StatementRunOptimisticLockingTests : No active profile set, falling back to 1 default profile: "default"
+2026-07-12T12:31:22.841+03:00  INFO 26468 --- [statement-forge] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-07-12T12:31:23.009+03:00  INFO 26468 --- [statement-forge] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 139 ms. Found 6 JPA repository interfaces.
+2026-07-12T12:31:24.494+03:00  INFO 26468 --- [statement-forge] [           main] org.testcontainers.images.PullPolicy     : Image pull policy will be performed by: DefaultPullPolicy()
+2026-07-12T12:31:24.508+03:00  INFO 26468 --- [statement-forge] [           main] o.t.utility.ImageNameSubstitutor         : Image name substitution will be performed by: DefaultImageNameSubstitutor (composite of 'ConfigurationFileImageNameSubstitutor' and 'PrefixingImageNameSubstitutor')
+2026-07-12T12:31:24.717+03:00  INFO 26468 --- [statement-forge] [           main] org.testcontainers.DockerClientFactory   : Testcontainers version: 2.0.5
+2026-07-12T12:31:25.589+03:00  INFO 26468 --- [statement-forge] [           main] o.t.d.DockerClientProviderStrategy       : Loaded org.testcontainers.dockerclient.NpipeSocketClientProviderStrategy from ~/.testcontainers.properties, will try it first
+2026-07-12T12:31:26.718+03:00  INFO 26468 --- [statement-forge] [           main] o.t.d.DockerClientProviderStrategy       : Found Docker environment with local Npipe socket (npipe:////./pipe/docker_engine)
+2026-07-12T12:31:26.722+03:00  INFO 26468 --- [statement-forge] [           main] org.testcontainers.DockerClientFactory   : Docker host IP address is localhost
+2026-07-12T12:31:26.765+03:00  INFO 26468 --- [statement-forge] [           main] org.testcontainers.DockerClientFactory   : Connected to docker: 
+  Server Version: 28.4.0
+  API Version: 1.51
+  Operating System: Docker Desktop
+  Total Memory: 7638 MB
+  Labels: 
+    com.docker.desktop.address=npipe://\\.\pipe\docker_cli
+2026-07-12T12:31:27.100+03:00  INFO 26468 --- [statement-forge] [           main] tc.testcontainers/ryuk:0.14.0            : Pulling docker image: testcontainers/ryuk:0.14.0. Please be patient; this may take some time but only needs to be done once.
+2026-07-12T12:31:27.455+03:00  INFO 26468 --- [statement-forge] [           main] o.t.utility.RegistryAuthLocator          : Credential helper/store (docker-credential-desktop) does not have credentials for https://index.docker.io/v1/
+2026-07-12T12:31:30.694+03:00  INFO 26468 --- [statement-forge] [tream-347378208] tc.testcontainers/ryuk:0.14.0            : Starting to pull image
+2026-07-12T12:31:30.734+03:00  INFO 26468 --- [statement-forge] [tream-347378208] tc.testcontainers/ryuk:0.14.0            : Pulling image layers:  0 pending,  0 downloaded,  0 extracted, (0 bytes/0 bytes)
+2026-07-12T12:31:31.833+03:00  INFO 26468 --- [statement-forge] [tream-347378208] tc.testcontainers/ryuk:0.14.0            : Pulling image layers:  1 pending,  1 downloaded,  0 extracted, (0 bytes/? MB)
+2026-07-12T12:31:31.933+03:00  INFO 26468 --- [statement-forge] [tream-347378208] tc.testcontainers/ryuk:0.14.0            : Pulling image layers:  1 pending,  1 downloaded,  1 extracted, (1 bytes/? MB)
+2026-07-12T12:31:32.331+03:00  INFO 26468 --- [statement-forge] [tream-347378208] tc.testcontainers/ryuk:0.14.0            : Pulling image layers:  0 pending,  2 downloaded,  1 extracted, (1 MB/2 MB)
+2026-07-12T12:31:32.332+03:00  INFO 26468 --- [statement-forge] [tream-347378208] tc.testcontainers/ryuk:0.14.0            : Pulling image layers:  0 pending,  2 downloaded,  2 extracted, (1 MB/2 MB)
+2026-07-12T12:31:32.356+03:00  INFO 26468 --- [statement-forge] [           main] tc.testcontainers/ryuk:0.14.0            : Image testcontainers/ryuk:0.14.0 pull took PT5.2552598S
+2026-07-12T12:31:32.356+03:00  INFO 26468 --- [statement-forge] [tream-347378208] tc.testcontainers/ryuk:0.14.0            : Pull complete. 2 layers, pulled in 1s (downloaded 1 MB at 1 MB/s)
+2026-07-12T12:31:32.578+03:00  INFO 26468 --- [statement-forge] [           main] tc.testcontainers/ryuk:0.14.0            : Creating container for image: testcontainers/ryuk:0.14.0
+2026-07-12T12:31:32.922+03:00  INFO 26468 --- [statement-forge] [           main] tc.testcontainers/ryuk:0.14.0            : Container testcontainers/ryuk:0.14.0 is starting: 41e1cc59f44b31550dbaa120b3b640989ed4e81eb90c5d7be0dba7bd0bf6cc9d
+2026-07-12T12:31:33.983+03:00  INFO 26468 --- [statement-forge] [           main] tc.testcontainers/ryuk:0.14.0            : Container testcontainers/ryuk:0.14.0 started in PT1.4052632S
+2026-07-12T12:31:34.000+03:00  INFO 26468 --- [statement-forge] [           main] o.t.utility.RyukResourceReaper           : Ryuk started - will monitor and terminate Testcontainers containers on JVM exit
+2026-07-12T12:31:34.001+03:00  INFO 26468 --- [statement-forge] [           main] org.testcontainers.DockerClientFactory   : Checking the system...
+2026-07-12T12:31:34.003+03:00  INFO 26468 --- [statement-forge] [           main] org.testcontainers.DockerClientFactory   : ?? Docker server version should be at least 1.6.0
+2026-07-12T12:31:34.005+03:00  INFO 26468 --- [statement-forge] [           main] tc.postgres:16                           : Creating container for image: postgres:16
+2026-07-12T12:31:34.238+03:00  INFO 26468 --- [statement-forge] [           main] tc.postgres:16                           : Container postgres:16 is starting: 92366cd4fe9151e9ce8c4030b984d4703938e211d8aa95de35fec5ca1e76fc8d
+2026-07-12T12:31:37.763+03:00  INFO 26468 --- [statement-forge] [           main] tc.postgres:16                           : Container postgres:16 started in PT3.7577767S
+2026-07-12T12:31:37.764+03:00  INFO 26468 --- [statement-forge] [           main] tc.postgres:16                           : Container is started (JDBC URL: jdbc:postgresql://localhost:63735/test?loggerLevel=OFF)
+2026-07-12T12:31:38.885+03:00  INFO 26468 --- [statement-forge] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:63735/test?loggerLevel=OFF (PostgreSQL 16.14)
+2026-07-12T12:31:39.012+03:00  INFO 26468 --- [statement-forge] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Schema history table "public"."flyway_schema_history" does not exist yet
+2026-07-12T12:31:39.022+03:00  INFO 26468 --- [statement-forge] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 4 migrations (execution time 00:00.047s)
+2026-07-12T12:31:39.057+03:00  INFO 26468 --- [statement-forge] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Creating Schema History table "public"."flyway_schema_history" ...
+2026-07-12T12:31:39.180+03:00  INFO 26468 --- [statement-forge] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "public": << Empty Schema >>
+2026-07-12T12:31:39.214+03:00  INFO 26468 --- [statement-forge] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "1 - baseline schema"
+2026-07-12T12:31:39.307+03:00  INFO 26468 --- [statement-forge] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "2 - seed data"
+2026-07-12T12:31:39.314+03:00  INFO 26468 --- [statement-forge] [           main] o.f.c.i.s.DefaultSqlScriptExecutor       : +---------+
+| setseed |
++---------+
+|         |
++---------+
+
+2026-07-12T12:33:01.332+03:00  INFO 26468 --- [statement-forge] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "3 - transaction account date index"
+2026-07-12T12:33:06.018+03:00  INFO 26468 --- [statement-forge] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "4 - statement id sequence"
+2026-07-12T12:33:06.026+03:00  INFO 26468 --- [statement-forge] [           main] o.f.c.i.s.DefaultSqlScriptExecutor       : +--------+
+| setval |
++--------+
+| 1      |
++--------+
+
+2026-07-12T12:33:06.054+03:00  INFO 26468 --- [statement-forge] [           main] o.f.core.internal.command.DbMigrate      : Successfully applied 4 migrations to schema "public", now at version v4 (execution time 01:26.684s)
+2026-07-12T12:33:06.273+03:00  INFO 26468 --- [statement-forge] [           main] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-07-12T12:33:06.414+03:00  INFO 26468 --- [statement-forge] [           main] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.1.Final
+2026-07-12T12:33:07.296+03:00  INFO 26468 --- [statement-forge] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-07-12T12:33:07.356+03:00  INFO 26468 --- [statement-forge] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-07-12T12:33:07.412+03:00  INFO 26468 --- [statement-forge] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@3c00da24
+2026-07-12T12:33:07.416+03:00  INFO 26468 --- [statement-forge] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-07-12T12:33:07.595+03:00  INFO 26468 --- [statement-forge] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [jdbc:postgresql://localhost:63735/test?loggerLevel=OFF]
+	Database driver: PostgreSQL JDBC Driver
+	Database dialect: PostgreSQLDialect
+	Database version: 16.14
+	Default catalog/schema: test/public
+	Autocommit mode: undefined/unknown
+	Isolation level: READ_COMMITTED [default READ_COMMITTED]
+	JDBC fetch size: none
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-07-12T12:33:09.599+03:00  INFO 26468 --- [statement-forge] [           main] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-07-12T12:33:09.607+03:00  INFO 26468 --- [statement-forge] [           main] org.hibernate.orm.jdbc.batch             : HHH100501: Automatic JDBC statement batching enabled (maximum batch size 50)
+2026-07-12T12:33:09.607+03:00 TRACE 26468 --- [statement-forge] [           main] org.hibernate.orm.jdbc.batch             : Using standard JDBC batch builder
+2026-07-12T12:33:09.694+03:00  INFO 26468 --- [statement-forge] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-07-12T12:33:09.864+03:00  INFO 26468 --- [statement-forge] [           main] o.s.d.j.r.query.QueryEnhancerFactories   : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-07-12T12:33:13.777+03:00  INFO 26468 --- [statement-forge] [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 1 endpoint beneath base path '/actuator'
+2026-07-12T12:33:13.898+03:00  INFO 26468 --- [statement-forge] [           main] c.m.s.StatementRunOptimisticLockingTests : Started StatementRunOptimisticLockingTests in 114.341 seconds (process running for 117.161)
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+Java HotSpot(TM) 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (C:\Users\Muiyuro\.m2\repository\net\bytebuddy\byte-buddy-agent\1.18.10\byte-buddy-agent-1.18.10.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+2026-07-12T12:33:14.882+03:00 DEBUG 26468 --- [statement-forge] [           main] org.hibernate.SQL                        : 
+    insert 
+    into
+        statement_run
+        (channel, run_date, status, version) 
+    values
+        (?, ?, ?, ?)
+2026-07-12T12:33:14.993+03:00 DEBUG 26468 --- [statement-forge] [           main] org.hibernate.SQL                        : 
+    select
+        sr1_0.id,
+        sr1_0.channel,
+        sr1_0.run_date,
+        sr1_0.status,
+        sr1_0.version 
+    from
+        statement_run sr1_0 
+    where
+        sr1_0.id=?
+2026-07-12T12:33:15.019+03:00 DEBUG 26468 --- [statement-forge] [           main] org.hibernate.SQL                        : 
+    select
+        sr1_0.id,
+        sr1_0.channel,
+        sr1_0.run_date,
+        sr1_0.status,
+        sr1_0.version 
+    from
+        statement_run sr1_0 
+    where
+        sr1_0.id=?
+2026-07-12T12:33:15.035+03:00 DEBUG 26468 --- [statement-forge] [           main] org.hibernate.SQL                        : 
+    select
+        sr1_0.id,
+        sr1_0.channel,
+        sr1_0.run_date,
+        sr1_0.status,
+        sr1_0.version 
+    from
+        statement_run sr1_0 
+    where
+        sr1_0.id=?
+2026-07-12T12:33:15.051+03:00 TRACE 26468 --- [statement-forge] [           main] org.hibernate.orm.jdbc.batch             : Created JDBC batch (50) - [com.muiyurocodes.statementforge.domain.StatementRun#UPDATE]
+2026-07-12T12:33:15.052+03:00 TRACE 26468 --- [statement-forge] [           main] org.hibernate.orm.jdbc.batch             : Adding to JDBC batch (1 / 50) - [com.muiyurocodes.statementforge.domain.StatementRun#UPDATE]
+2026-07-12T12:33:15.053+03:00 DEBUG 26468 --- [statement-forge] [           main] org.hibernate.SQL                        : 
+    update
+        statement_run 
+    set
+        channel=?,
+        run_date=?,
+        status=?,
+        version=? 
+    where
+        id=? 
+        and version=?
+2026-07-12T12:33:15.058+03:00 TRACE 26468 --- [statement-forge] [           main] org.hibernate.orm.jdbc.batch             : Executing JDBC batch (1 / 50) - [com.muiyurocodes.statementforge.domain.StatementRun#UPDATE]
+2026-07-12T12:33:15.071+03:00 DEBUG 26468 --- [statement-forge] [           main] org.hibernate.SQL                        : 
+    select
+        sr1_0.id,
+        sr1_0.channel,
+        sr1_0.run_date,
+        sr1_0.status,
+        sr1_0.version 
+    from
+        statement_run sr1_0 
+    where
+        sr1_0.id=?
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 116.8 s -- in com.muiyurocodes.statementforge.StatementRunOptimisticLockingTests
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  02:10 min
+[INFO] Finished at: 2026-07-12T12:33:17+03:00
+[INFO] ------------------------------------------------------------------------
