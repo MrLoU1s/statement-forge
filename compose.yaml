@@ -18,5 +18,24 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    build:
+      context: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+    environment:
+      # Container-to-container: the "postgres" service name on its container
+      # port 5432 - the 5433 host mapping above is a host-only convenience and
+      # doesn't apply inside the compose network. reWriteBatchedInserts=true
+      # carried over from application.yaml (M7).
+      - 'SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/statementforge?reWriteBatchedInserts=true'
+    labels:
+      # Stops the local `mvnw spring-boot:run` dev loop (spring-boot-docker-compose)
+      # from also trying to manage/connect to this container.
+      - 'org.springframework.boot.ignore=true'
+
 volumes:
   pgdata:

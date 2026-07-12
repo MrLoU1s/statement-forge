@@ -20,10 +20,14 @@ batch inserts, ORM vs native SQL, optimistic locking), each backed by real
 
 | Investigation | Before | After |
 |---|---|---|
-| N+1 statement generation (1k accounts) | `[N]` queries, `[X]s` | `[M]` queries, `[Y]s` |
-| Range query, no index vs composite index | seq scan, `[X]ms` | index scan, `[Y]ms` |
-| Deep pagination (page 10,000) | OFFSET `[X]ms` | keyset `[Y]ms` |
-| Batch insert throughput | `[X]` rows/s | `[Y]` rows/s (`[N]×`) |
+| N+1 in statement generation (1k accounts) | 2,003 queries, 207.5s | 670 queries, 2.49s (~83×) |
+| Range query, no index vs composite index | Parallel Seq Scan, 287.9ms | Index Scan, 0.204ms (~1,411×) |
+| Deep pagination (depth 10,000) | OFFSET ~118ms, grows with depth | keyset ~13.7ms, flat at any depth (~528× DB-side) |
+| Batch insert throughput (20k accounts) | 306.16 rows/s (`IDENTITY`; `batch_size` alone: 303.72 — no change) | 1,164.27 rows/s (`SEQUENCE` + batch + rewrite, ~3.8×) |
+| Row-by-row batch vs set-based native SQL (20k accounts) | 11,426ms (`BATCHED`) | 2,071ms (`NATIVE_SQL`, ~8.3×) — full 200k accounts in 9.6s |
+| Optimistic locking on concurrent status update | silent lost update, no error | `409 Conflict`, version-guarded |
+
+Full write-up, `EXPLAIN` plans, and raw evidence for every row: [`PERFORMANCE.md`](PERFORMANCE.md).
 
 ## Quickstart
 
@@ -31,7 +35,9 @@ batch inserts, ORM vs native SQL, optimistic locking), each backed by real
 docker compose up
 ```
 
-First start seeds ~5M transaction rows via Flyway (takes 1–3 minutes). Then:
+First start builds the app image, then seeds ~5M transaction rows via Flyway (takes
+1–3 minutes — watch the logs, or run `docker compose logs -f app`). Once you see
+`Started StatementForgeApplication`, the API is live at `localhost:8080`:
 
 ```bash
 # batch: generate statements for March 2025 (choose a strategy to compare)
@@ -39,7 +45,25 @@ curl -X POST "localhost:8080/api/statement-runs?period=2025-03&strategy=NAIVE&li
 curl -X POST "localhost:8080/api/statement-runs?period=2025-03&strategy=NATIVE_SQL"
 ```
 
-<!-- TODO(M10): full endpoint table -->
+To reset to a pristine seeded database at any point: `docker compose down -v` then
+`docker compose up` again (Flyway reapplies the same deterministic seed).
+
+For local development against an IDE (hot reload, debugger attached), run
+`./mvnw spring-boot:run` instead — `spring-boot-docker-compose` starts just the
+`postgres` service automatically (the `app` service is labelled
+`org.springframework.boot.ignore` so it doesn't also try to start itself).
+
+## Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/statement-runs?period={yyyy-MM}&strategy={NAIVE\|FETCH_JOIN\|BATCHED\|NATIVE_SQL}&limitAccounts={n}` | Run the batch statement generator with a chosen strategy (default `limitAccounts=1000`) |
+| `GET` | `/api/statement-runs/{id}` | Read a run's status, version, and statement count |
+| `PATCH` | `/api/statement-runs/{id}` | Transition a run's status (`@Version`-guarded — concurrent conflict → `409`) |
+| `GET` | `/api/accounts/{accountId}/transactions?from={date}&to={date}` | Date-range transaction lookup for one account (composite-index demo) |
+| `GET` | `/api/accounts/{accountId}/statements/{period}/lines` | Per-transaction running balance through a period (native SQL window function) |
+| `GET` | `/api/transactions?page={n}&size={n}` | Deep transaction listing, OFFSET pagination |
+| `GET` | `/api/transactions?afterId={id}&size={n}` | Deep transaction listing, keyset (cursor) pagination |
 
 ## Schema
 

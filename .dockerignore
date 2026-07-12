@@ -1,0 +1,8 @@
+target/
+docs/
+.git/
+.idea/
+.vscode/
+.mvn/wrapper/maven-wrapper.jar
+*.iml
+CLAUDE.md
