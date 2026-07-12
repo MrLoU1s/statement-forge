@@ -58,6 +58,12 @@ public class StatementGenerationService {
     // sequential curl-driven benchmarking; would race under concurrent runs.
     @Transactional
     public StatementRunResponse generate(YearMonth period, GenerationStrategy strategy, int limitAccounts) {
+        if (strategy != GenerationStrategy.NAIVE && strategy != GenerationStrategy.FETCH_JOIN
+                && strategy != GenerationStrategy.BATCHED && strategy != GenerationStrategy.NATIVE_SQL) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_IMPLEMENTED, "Strategy " + strategy + " is not implemented yet");
+        }
+
         Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
         statistics.clear();
         long startNanos = System.nanoTime();
@@ -86,14 +92,11 @@ public class StatementGenerationService {
             ChunkResult result = generateBatched(run, limitAccounts, periodStart, periodEnd);
             accountsLoaded = result.accountsLoaded();
             statementsWritten = result.statementsWritten();
-        } else if (strategy == GenerationStrategy.NATIVE_SQL) {
+        } else { // NATIVE_SQL — the guard above already restricted strategy to one of the four known values
             int written = statementRepository.insertAggregatedStatements(
                     run.getId(), 1, limitAccounts, periodStart, periodEnd);
             accountsLoaded = written;
             statementsWritten = written;
-        } else {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_IMPLEMENTED, "Strategy " + strategy + " is not implemented yet");
         }
 
         run.setStatus("COMPLETED");
