@@ -14,7 +14,7 @@
 | 2 | Missing composite index | Parallel Seq Scan, 287.9ms, ~44.8k buffers | Index Scan, 0.204ms, 10 buffers | [§3](#3-indexing) |
 | 3 | OFFSET deep pagination | 115.1ms DB / 123.2ms API @ depth 10k (offset 500k) | 0.218ms DB / 13.7ms API, flat at any depth | [§4](#4-pagination) |
 | 4 | Row-by-row inserts (IDENTITY) | 306.16 rows/s (batch_size=50 alone: 303.72, no change) | 1,164.27 rows/s (SEQUENCE + batch + rewrite) | [§5](#5-batch-inserts) |
-| 5 | ORM loop vs set-based native SQL | `[X]s` @ 20k accts | `[Y]s` (full 200k: `[Z]s`) | [§6](#6-orm-vs-native-sql) |
+| 5 | ORM loop vs set-based native SQL | 11,426ms @ 20k accts (BATCHED, §5) | 2,071ms @ 20k accts (full 200k: 9,602ms) | [§6](#6-orm-vs-native-sql) |
 | 6 | Lost update on run status | — | version conflict → 409 | [§7](#7-optimistic-locking) |
 
 ## Dataset
@@ -648,7 +648,200 @@ four-row ask — isolating each one's individual share is a natural extension, n
 
 ## 6. ORM vs native SQL
 
-<!-- TODO(M8) -->
+**Symptom.** The monthly statement batch, even at its fastest so far (§5's `BATCHED`:
+1,164.27 stmt/s at `limitAccounts=20000`), still materializes an `Account`/`Transaction`
+entity graph in Java, sums debits/credits/closing balance in a Java loop, and constructs
+one `Statement` entity per account before writing it. None of that per-row Java work is
+actually necessary — the aggregation `total_debits`/`total_credits`/`closing_balance` is
+a pure function of rows already sitting in Postgres. Separately, the on-demand
+requirement from `PROJECT_CONTEXT_BRIEF.md` §5 — "running balance via a window
+function" — has no equivalent at all in any strategy built so far.
+
+**Hypothesis (as stated by PLAN.md, before testing it).** JPQL has no window-function
+grammar and no bulk `INSERT ... SELECT` support, so both the running-balance endpoint
+and a set-based aggregation write require dropping to native SQL — that absence of a
+JPQL alternative *is* the justification.
+
+**Correction to that hypothesis — tested empirically before writing any native SQL,
+not assumed from training data or from PLAN.md's text.** Full evidence, including every
+generated SQL statement, in
+[`docs/evidence/m8-native-sql.log`](docs/evidence/m8-native-sql.log). Against this
+project's actual stack (Hibernate 7.4.1.Final, Spring Data JPA 4.1.0, Spring Boot 4.1):
+
+1. **The window-function running balance works in JPQL.**
+   `select new ...RunningBalanceLineDto(t.id, t.txnDate, t.amount, t.description,
+   sum(t.amount) over (partition by t.account.id order by t.txnDate, t.id)) from
+   Transaction t where ...` compiled and ran correctly — Hibernate translated `over
+   (partition by ... order by ...)` straight into the equivalent real SQL window
+   function and returned correct, verified running balances.
+2. **The bulk `INSERT ... SELECT` aggregation also works in JPQL** (using `CASE WHEN`
+   in place of the native version's `FILTER`, since JPQL has no `FILTER` clause) — more
+   surprisingly than the first result. Hibernate compiled it into a sophisticated CTE
+   that also correctly handles `Statement.id`'s pooled-`SEQUENCE` batch allocation from
+   §5 (`row_number() over()` + batched `nextval()`), and it executed without error.
+
+Hibernate 6 rewrote HQL's parser (ANTLR-based SQM) and added real window-function and
+CTE-based bulk-insert support along the way — training-data intuition that "JPQL can't
+do window functions" is out of date for this stack, in the same way M7's Stage B needed
+the *current* Hibernate docs checked live rather than assumed. **This is a genuine
+correction to PLAN.md's stated premise**, flagged and discussed with the developer
+before writing PERFORMANCE.md, not silently reinterpreted (see `DECISIONS.md` D8 for the
+full reasoning and the decision on how to proceed).
+
+**So why native SQL anyway?** Because it's still the better tool here, for reasons that
+have nothing to do with JPQL being incapable:
+- **No ORM translation layer between what's written and what runs.** The HQL bulk
+  insert's generated SQL (`docs/evidence/m8-native-sql.log` Part 0) is a three-CTE
+  query most of which exists purely to reimplement `Statement.id`'s sequence-batching
+  logic in SQL — correct, but nothing about *this* investigation asked for that; the
+  hand-written version says exactly what it means (`nextval('statement_id_seq')` once,
+  `FILTER` for the conditional sums) and nothing more.
+- **`FILTER (WHERE ...)` reads as intent** — "sum these rows meeting this condition" —
+  where `CASE WHEN ... THEN ... ELSE 0 END` reads as a value substitution that happens
+  to accumulate into a sum. Same result, more indirection.
+- **This is a pure set-based reporting/write operation with no entity semantics
+  attached** — no dirty checking, no lazy loading, no per-row Java object needed at all.
+  There is nothing for an ORM to abstract *away from* here; going through HQL buys
+  nothing over writing the SQL directly.
+- **The job description's actual ask** — "decide when ORM helps and when raw SQL is the
+  better tool" — is a judgment call, not a capability gap. Being able to write, read,
+  and reason about the exact SQL and its `EXPLAIN` plan is the skill being screened for;
+  "JPQL literally can't do this" would have been the *less* accurate and less
+  interesting answer to give in an interview.
+
+**Fix.** `strategy=NATIVE_SQL`, one set-based statement
+(`StatementRepository.insertAggregatedStatements`, `@Modifying @Query(nativeQuery =
+true)`):
+```sql
+INSERT INTO statement (id, statement_run_id, account_id, period_start, period_end,
+                        total_debits, total_credits, closing_balance, document_ref)
+SELECT nextval('statement_id_seq'), :runId, a.id, :periodStart, :periodEnd,
+       COALESCE(SUM(t.amount) FILTER (WHERE t.amount < 0
+                 AND t.txn_date BETWEEN :periodStart AND :periodEnd), 0),
+       COALESCE(SUM(t.amount) FILTER (WHERE t.amount > 0
+                 AND t.txn_date BETWEEN :periodStart AND :periodEnd), 0),
+       COALESCE(SUM(t.amount) FILTER (WHERE t.txn_date <= :periodEnd), 0),
+       'stmt-' || :runId || '-' || a.id
+FROM account a
+JOIN transaction t ON t.account_id = a.id
+WHERE a.id BETWEEN :fromId AND :toId
+GROUP BY a.id
+```
+Plus a window-function endpoint, `GET /api/accounts/{accountId}/statements/{period}/lines`
+(`TransactionRepository.findRunningBalanceThroughPeriod`, also `@Query(nativeQuery =
+true)`, no `@SqlResultSetMapping` needed — `RunningBalanceLineDto`'s constructor
+argument order/types match the `SELECT` list exactly, which is all Spring Data needs to
+bind a native query straight into a record):
+```sql
+SELECT t.id, t.txn_date, t.amount, t.description,
+       SUM(t.amount) OVER (PARTITION BY t.account_id ORDER BY t.txn_date, t.id) AS running_balance
+FROM transaction t
+WHERE t.account_id = :accountId AND t.txn_date <= :periodEnd
+ORDER BY t.txn_date, t.id
+```
+`t.txn_date <= :periodEnd` has no lower bound on purpose — it matches
+`StatementGenerationService.buildStatement`'s own `closingBalance` semantics exactly
+(cumulative since account inception, not period-isolated); this endpoint is the
+per-transaction breakdown of the same number a statement's `closing_balance` already
+reports in aggregate (cross-checked below).
+
+**A real gotcha hit while self-verifying, not anticipated going in.** The first version
+of the native `INSERT` omitted the `id` column, expecting it to auto-populate the way
+`IDENTITY` used to. It didn't — a real `500`:
+```
+org.postgresql.util.PSQLException: ERROR: null value in column "id" of relation "statement" violates not-null constraint
+  Detail: Failing row contains (null, 16, 11233, 2025-03-01, 2025-03-31, 0.00, 0.00, 15112.01, stmt-16-11233).
+```
+§5's `V4__statement_id_sequence.sql` (`ALTER TABLE statement ALTER COLUMN id DROP
+IDENTITY`) removed `IDENTITY` generation but never added a column `DEFAULT` — Hibernate's
+own JPA write path never needed one, since `@SequenceGenerator` calls `nextval()`
+client-side via JDBC regardless of the column's DDL. A hand-written native `INSERT`
+bypasses that generator entirely and must call `nextval('statement_id_seq')` itself,
+which is what the query above does. Native SQL means opting out of the ORM's id
+generation too, not just its query building — worth stating plainly rather than
+glossing over.
+
+**Measurement.** Same benchmark shape as every prior investigation
+(`POST /api/statement-runs?period=2025-03&strategy=NATIVE_SQL&limitAccounts=...`), warm
+runs, full capture in `docs/evidence/m8-native-sql.log`:
+
+| Scale | Run | elapsedMs | statements/sec | jdbcQueryCount |
+|---|---|---|---|---|
+| 20,000 accounts | 1 (cold) | 4,314 | 4,636.07 | 3 |
+| 20,000 accounts | 2 (warm) | 2,071 | 9,657.17 | 3 |
+| 200,000 accounts (full table) | 1 (cold) | 11,386 | 17,565.43 | 3 |
+| 200,000 accounts (full table) | 2 (warm) | 9,602 | 20,828.99 | 3 |
+
+`jdbcQueryCount` = 3 in every run, at every scale: 1 `statement_run` `INSERT` + 1
+aggregation `INSERT ... SELECT` (the entire batch, one statement, regardless of whether
+`limitAccounts` is 20,000 or 200,000) + 1 `statement_run` `UPDATE`. Compare §5's
+`BATCHED` at the same 20,000-account scale: 303 queries, 11,426ms warm, 1,164.27
+stmt/s — `NATIVE_SQL` is **~8.3× faster** (11,426ms → 2,071ms) and issues **~101× fewer**
+JDBC statements (303 → 3) for the identical workload. The full 200,000-account run
+— **impossible** under `NAIVE` (§1's own extrapolation: ~11.5 hours) and would have been
+the slowest, most JDBC-round-trip-heavy option under row-by-row `BATCHED` — completes in
+**9.602 seconds** warm. This is the arc the whole investigation sequence has been
+building toward: the same monthly batch, full production scale, in single-digit seconds.
+
+**Coverage — a real, measured difference from FETCH_JOIN/BATCHED, not a bug.**
+`NATIVE_SQL` wrote a statement for **every** requested account (20,000/20,000 and
+200,000/200,000) — full coverage, unlike §2/§5's ~66.5% (`FETCH_JOIN`/`BATCHED`'s inner
+join drops accounts with zero transactions *in the period*, D11). The query above (taken
+directly from PLAN.md's own SQL) joins `account` to `transaction` with **no period
+filter in the `JOIN`** — every account with *any* transaction, ever, produces a row; the
+period only scopes *which* of that account's transactions count inside each `FILTER`
+clause, correctly zeroing out `total_debits`/`total_credits` when none fall in the
+period. In this seed every account has ~25 transactions spread across 2024–2025, so
+every account has *some* transaction and all 200,000 get a row. This matches `NAIVE`'s
+full-coverage semantics ("every requested account gets a statement"), not
+`FETCH_JOIN`/`BATCHED`'s period-filtered-join semantics — a genuine behavioral
+difference between strategies driven entirely by *where* the period predicate lives
+(inside the `JOIN` vs. inside a `FILTER`), not by set-based-vs-row-by-row execution.
+Worth knowing cold in an interview: the same `SUM(...) FILTER (WHERE ...)` idiom that
+correctly scopes an aggregate can silently *not* scope which rows survive a `JOIN` at
+all — those are two different questions.
+
+**Correctness cross-check** (account 123456, run 24, full detail in the evidence log):
+```sql
+SELECT statement_run_id, account_id, total_debits, total_credits, closing_balance, document_ref
+FROM statement WHERE account_id = 123456 AND statement_run_id = 24;
+```
+```
+ statement_run_id | account_id | total_debits | total_credits | closing_balance |  document_ref
+------------------+------------+--------------+---------------+-----------------+----------------
+               24 |     123456 |     -8810.27 |       6378.92 |       -18497.42 | stmt-24-123456
+```
+Matches `GET /api/accounts/123456/statements/2025-03/lines`'s last row exactly
+(`runningBalance: -18497.42` on the 2025-03-18 transaction) — the aggregate
+`closing_balance` and the window function's final running balance are the same number,
+computed two different ways, and they agree.
+
+**`EXPLAIN (ANALYZE, BUFFERS)`** (full plans in `docs/evidence/m8-native-sql.log`):
+the aggregation `SELECT` body at the full 200,000-account scale drives a
+`Nested Loop` — `Parallel Index Only Scan` on `account_pkey` outer, `Index Scan using
+idx_transaction_account_date` inner (one probe per account, 25 rows each) — finishing in
+4,133ms of the run's ~9.6s total (the `INSERT` itself, plus HTTP/JSON/bookkeeping,
+accounts for the rest). The window-function query for one account's running balance
+uses a `Bitmap Index Scan` on the same index, `WindowAgg` over a 15-row, 26kB in-memory
+sort, in 0.754ms. **Neither plan needed a new index** — `idx_transaction_account_date`,
+built in §3 (M5) for a completely unrelated investigation (a single-account date-range
+lookup), turns out to be exactly the right index for both of M8's queries too, because
+both are fundamentally the same access pattern underneath: "this account's transactions,
+optionally bounded by date." An index's value outlives the one query it was written for.
+
+**What I learned.** The most valuable outcome of this investigation wasn't the ~8.3×
+throughput number — it was discovering, by testing rather than assuming, that the
+plan's own justification for going native was outdated for the Hibernate version this
+project actually runs. That correction changes what the *right* interview answer is:
+not "ORM can't do this" (false, and a shallow thing to claim once corrected in front of
+someone who knows Hibernate 6+) but "ORM *can* do this, and here's why I'd still reach
+for native SQL for a pure set-based reporting/write operation with no entity semantics
+attached" — a judgment call about fit, which is exactly what
+`PROJECT_CONTEXT_BRIEF.md`'s framing of this JD requirement ("decide when ORM helps and
+when raw SQL is the better tool") is actually asking for. Separately: dropping to native
+SQL means opting out of *everything* the ORM was doing silently, including id
+generation — the `nextval()` gotcha was a small but real reminder that "bypass the ORM"
+is not a scoped decision, it's an all-or-nothing one for whatever query you write it in.
 
 ## 7. Optimistic locking
 

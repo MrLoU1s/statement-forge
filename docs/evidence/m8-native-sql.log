@@ -1,0 +1,263 @@
+M8 — ORM vs native SQL: raw evidence
+=====================================
+
+------------------------------------------------------------------
+PART 0 — Correction to PLAN.md's premise (empirical, not assumed)
+------------------------------------------------------------------
+PLAN.md's justification for this milestone was "try it in JPQL first, you
+can't (no window functions) — that's why we go native." Tested directly
+against this project's Hibernate 7.4.1.Final / Spring Data JPA 4.1.0 before
+writing any native SQL. Both halves actually worked.
+
+--- Attempt 1: window-function running balance in JPQL ---
+Repository method (temporary, later deleted):
+  select new com.muiyurocodes.statementforge.dto.RunningBalanceLineDto(
+      t.id, t.txnDate, t.amount, t.description,
+      sum(t.amount) over (partition by t.account.id order by t.txnDate, t.id))
+  from Transaction t
+  where t.account.id = :accountId and t.txnDate <= :periodEnd
+  order by t.txnDate, t.id
+
+Result: HTTP 200, correct cumulative running balances (account 123456,
+period 2025-03), identical to the native version's output below.
+
+Generated SQL (org.hibernate.SQL DEBUG, confirms genuine translation, not a
+silent fallback):
+    select
+        t1_0.id, t1_0.txn_date, t1_0.amount, t1_0.description,
+        sum(t1_0.amount) over(partition
+    by
+        t1_0.account_id
+    order by
+        t1_0.txn_date, t1_0.id)
+    from
+        transaction t1_0
+    where
+        t1_0.account_id=?
+        and t1_0.txn_date<=?
+    order by
+        t1_0.txn_date,
+        t1_0.id
+
+--- Attempt 2: bulk INSERT...SELECT with conditional aggregation in JPQL ---
+Repository method (temporary, later deleted; CASE WHEN in place of FILTER,
+since JPQL has no FILTER clause):
+  insert into Statement (statementRun, account, periodStart, periodEnd,
+      totalDebits, totalCredits, closingBalance, documentRef)
+  select r, a, :periodStart, :periodEnd,
+      sum(case when t.amount < 0 and t.txnDate between :periodStart and :periodEnd
+          then t.amount else 0 end),
+      sum(case when t.amount > 0 and t.txnDate between :periodStart and :periodEnd
+          then t.amount else 0 end),
+      sum(case when t.txnDate <= :periodEnd then t.amount else 0 end),
+      concat('stmt-', str(r.id), '-', str(a.id))
+  from StatementRun r, Account a join a.transactions t
+  where r.id = :runId and a.id between :fromId and :toId
+  group by r, a
+
+Result (once wrapped in a real @Transactional, after an initial test-harness
+mistake — a scratch endpoint missing @Transactional threw
+TransactionRequiredException, unrelated to JPQL grammar): executed
+successfully, no exception. Hibernate compiled it into a CTE that also
+handles the Statement.id pooled-SEQUENCE (M7) batch allocation:
+
+    with base_HTE_statement (statementRun_id, account_id, periodStart, periodEnd,
+        totalDebits, totalCredits, closingBalance, documentRef, rn_) as materialized (
+      select sr2_0.id, a2_0.id, cast(? as date), cast(? as date),
+        sum(case when t1_0.amount<0 and t1_0.txn_date between ? and ? then t1_0.amount else 0 end),
+        sum(case when t1_0.amount>0 and t1_0.txn_date between ? and ? then t1_0.amount else 0 end),
+        sum(case when t1_0.txn_date<=? then t1_0.amount else 0 end),
+        ('stmt-'||cast(sr2_0.id as varchar)||'-'||cast(a2_0.id as varchar)),
+        row_number() over()
+      from statement_run sr2_0, account a2_0
+      join transaction t1_0 on a2_0.id=t1_0.account_id
+      where sr2_0.id=? and a2_0.id between ? and ?
+      group by sr2_0.id, a2_0.id
+    ), rows_with_next_val (rn_, id) as materialized (
+      select e.rn_, (nextval('statement_id_seq')-49) from base_HTE_statement e
+      where ((e.rn_-1)%50)=0
+    ), HTE_statement (id, statementRun_id, account_id, periodStart, periodEnd,
+        totalDebits, totalCredits, closingBalance, documentRef, rn_) as materialized (
+      select (t.id+(e.rn_-t.rn_)), e.statementRun_id, e.account_id, e.periodStart,
+        e.periodEnd, e.totalDebits, e.totalCredits, e.closingBalance, e.documentRef, e.rn_
+      from base_HTE_statement e
+      left join rows_with_next_val t on (e.rn_-((e.rn_-1)%50))=t.rn_
+    ), dml_cte_statement (id) as (
+      insert into statement as s1_0(id, statement_run_id, account_id, period_start,
+          period_end, total_debits, total_credits, closing_balance, document_ref)
+      select e.id, e.statementRun_id, e.account_id, e.periodStart, e.periodEnd,
+        e.totalDebits, e.totalCredits, e.closingBalance, e.documentRef
+      from HTE_statement e
+      returning id
+    )
+    select count(*) from dml_cte_statement id
+
+Conclusion: both halves of this investigation ARE expressible in HQL on
+Hibernate 6+/7. Native SQL below is a deliberate choice, documented honestly
+in PERFORMANCE.md SS6 and DECISIONS.md D8 — not a capability gap.
+
+------------------------------------------------------------------
+PART 1 — Real gotcha hit while self-verifying: DROP IDENTITY has no DEFAULT
+------------------------------------------------------------------
+First attempt at the native INSERT omitted the `id` column (relying on
+IDENTITY-like auto-generation). Failed for real:
+
+  org.postgresql.util.PSQLException: ERROR: null value in column "id" of
+  relation "statement" violates not-null constraint
+    Detail: Failing row contains (null, 16, 11233, 2025-03-01, 2025-03-31,
+    0.00, 0.00, 15112.01, stmt-16-11233).
+
+Root cause: M7's V4 migration (`ALTER TABLE statement ALTER COLUMN id DROP
+IDENTITY`) removed IDENTITY generation but added no column DEFAULT — it
+relies entirely on Hibernate's own @SequenceGenerator calling nextval() via
+JDBC for the JPA/entity write path. A hand-written native INSERT bypasses
+that generator and must call nextval('statement_id_seq') itself. Fixed by
+adding it explicitly to the SELECT list (see the real query in PART 2).
+
+------------------------------------------------------------------
+PART 2 — Real executed native SQL (org.hibernate.SQL DEBUG, from the app)
+------------------------------------------------------------------
+INSERT INTO statement (id, statement_run_id, account_id, period_start, period_end,
+                        total_debits, total_credits, closing_balance, document_ref)
+SELECT nextval('statement_id_seq'), ?, a.id, ?, ?,
+       COALESCE(SUM(t.amount) FILTER (WHERE t.amount < 0
+                 AND t.txn_date BETWEEN ? AND ?), 0),
+       COALESCE(SUM(t.amount) FILTER (WHERE t.amount > 0
+                 AND t.txn_date BETWEEN ? AND ?), 0),
+       COALESCE(SUM(t.amount) FILTER (WHERE t.txn_date <= ?), 0),
+       'stmt-' || ? || '-' || a.id
+FROM account a
+JOIN transaction t ON t.account_id = a.id
+WHERE a.id BETWEEN ? AND ?
+GROUP BY a.id
+
+SELECT t.id, t.txn_date, t.amount, t.description,
+       SUM(t.amount) OVER (PARTITION BY t.account_id ORDER BY t.txn_date, t.id) AS running_balance
+FROM transaction t
+WHERE t.account_id = ? AND t.txn_date <= ?
+ORDER BY t.txn_date, t.id
+
+------------------------------------------------------------------
+PART 3 — Benchmark results (POST /api/statement-runs, warm-cache discipline)
+------------------------------------------------------------------
+strategy=NATIVE_SQL, limitAccounts=20000, period=2025-03:
+  Run 1 (cold): {"runId":21,"strategy":"NATIVE_SQL","accounts":20000,"statementsWritten":20000,"elapsedMs":4314,"statementsPerSec":4636.068613815484,"jdbcQueryCount":3}
+  Run 2 (warm): {"runId":22,"strategy":"NATIVE_SQL","accounts":20000,"statementsWritten":20000,"elapsedMs":2071,"statementsPerSec":9657.170449058425,"jdbcQueryCount":3}
+
+strategy=NATIVE_SQL, limitAccounts=200000 (the full account table), period=2025-03:
+  Run 1 (cold): {"runId":23,"strategy":"NATIVE_SQL","accounts":200000,"statementsWritten":200000,"elapsedMs":11386,"statementsPerSec":17565.43123133673,"jdbcQueryCount":3}
+  Run 2 (warm): {"runId":24,"strategy":"NATIVE_SQL","accounts":200000,"statementsWritten":200000,"elapsedMs":9602,"statementsPerSec":20828.99395959175,"jdbcQueryCount":3}
+
+Coverage note: NATIVE_SQL wrote a statement for every requested account
+(20000/20000, 200000/200000) — a real, measured difference from
+FETCH_JOIN/BATCHED's ~66.5% coverage at the same limitAccounts (M4/M7). Cause:
+PLAN.md's own SQL joins account to transaction unconditionally (no period
+filter in the JOIN), then scopes the period entirely inside each FILTER
+clause — every account with ANY transaction ever (in this seed, all of them)
+gets a row, with correctly zeroed aggregates where nothing matches. This
+matches NAIVE's full-coverage semantics, not FETCH_JOIN/BATCHED's inner-join
+semantics — see PERFORMANCE.md SS6 and DECISIONS.md D8/D11.
+
+Correctness cross-check (account 123456, run 24):
+  SELECT statement_run_id, account_id, total_debits, total_credits, closing_balance, document_ref
+  FROM statement WHERE account_id = 123456 AND statement_run_id = 24;
+
+   statement_run_id | account_id | total_debits | total_credits | closing_balance |  document_ref
+  ------------------+------------+--------------+---------------+-----------------+----------------
+                 24 |     123456 |     -8810.27 |       6378.92 |       -18497.42 | stmt-24-123456
+
+  Matches the running-balance endpoint's last row for the same account/period
+  exactly (runningBalance -18497.42 on the last transaction, 2025-03-18).
+  total_debits -8810.27 = the lone March debit (2025-03-16); total_credits
+  6378.92 = 1796.15 + 4582.77 (the two March credits).
+
+GET /api/accounts/123456/statements/2025-03/lines:
+  [{"id":2123456,"txnDate":"2024-01-30","amount":-5196.81,"description":"POS purchase","runningBalance":-5196.81},
+   {"id":1723456,"txnDate":"2024-03-15","amount":-6341.00,"description":"POS purchase","runningBalance":-11537.81},
+   {"id":1523456,"txnDate":"2024-04-22","amount":3231.47,"description":"POS purchase","runningBalance":-8306.34},
+   {"id":1923456,"txnDate":"2024-06-11","amount":-299.84,"description":"POS purchase","runningBalance":-8606.18},
+   {"id":4723456,"txnDate":"2024-06-23","amount":3069.06,"description":"POS purchase","runningBalance":-5537.12},
+   {"id":1323456,"txnDate":"2024-08-10","amount":-6090.46,"description":"POS purchase","runningBalance":-11627.58},
+   {"id":3323456,"txnDate":"2024-08-13","amount":-3100.02,"description":"POS purchase","runningBalance":-14727.60},
+   {"id":2723456,"txnDate":"2024-08-29","amount":2637.77,"description":"POS purchase","runningBalance":-12089.83},
+   {"id":3123456,"txnDate":"2024-09-11","amount":2036.93,"description":"POS purchase","runningBalance":-10052.90},
+   {"id":4323456,"txnDate":"2024-09-23","amount":-5081.24,"description":"POS purchase","runningBalance":-15134.14},
+   {"id":4523456,"txnDate":"2024-09-30","amount":2079.19,"description":"POS purchase","runningBalance":-13054.95},
+   {"id":4123456,"txnDate":"2025-02-03","amount":-3011.12,"description":"POS purchase","runningBalance":-16066.07},
+   {"id":1123456,"txnDate":"2025-03-07","amount":1796.15,"description":"POS purchase","runningBalance":-14269.92},
+   {"id":3723456,"txnDate":"2025-03-16","amount":-8810.27,"description":"POS purchase","runningBalance":-23080.19},
+   {"id":3923456,"txnDate":"2025-03-18","amount":4582.77,"description":"POS purchase","runningBalance":-18497.42}]
+
+------------------------------------------------------------------
+PART 4 — EXPLAIN (ANALYZE, BUFFERS)
+------------------------------------------------------------------
+--- The aggregation SELECT body, full 200k-account scale ---
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT a.id,
+       COALESCE(SUM(t.amount) FILTER (WHERE t.amount < 0 AND t.txn_date BETWEEN '2025-03-01' AND '2025-03-31'), 0),
+       COALESCE(SUM(t.amount) FILTER (WHERE t.amount > 0 AND t.txn_date BETWEEN '2025-03-01' AND '2025-03-31'), 0),
+       COALESCE(SUM(t.amount) FILTER (WHERE t.txn_date <= '2025-03-31'), 0)
+FROM account a
+JOIN transaction t ON t.account_id = a.id
+WHERE a.id BETWEEN 1 AND 200000
+GROUP BY a.id;
+
+ Finalize GroupAggregate  (cost=1000.88..323396.89 rows=200000 width=104) (actual time=83.364..4073.802 rows=200000 loops=1)
+   Group Key: a.id
+   Buffers: shared hit=5554439 read=64372 written=3794
+   ->  Gather Merge  (cost=1000.88..312896.89 rows=400000 width=104) (actual time=83.135..3771.106 rows=200000 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=5554439 read=64372 written=3794
+         ->  Partial GroupAggregate  (cost=0.85..265726.94 rows=200000 width=104) (actual time=17.237..2209.980 rows=66667 loops=3)
+               Group Key: a.id
+               Buffers: shared hit=5554439 read=64372 written=3794
+               ->  Nested Loop  (cost=0.85..204935.29 rows=2083333 width=18) (actual time=16.844..1608.664 rows=1666667 loops=3)
+                     Buffers: shared hit=5554439 read=64372 written=3794
+                     ->  Parallel Index Only Scan using account_pkey on account a  (cost=0.42..5037.75 rows=83333 width=8) (actual time=0.165..20.385 rows=66667 loops=3)
+                           Index Cond: ((id >= 1) AND (id <= 200000))
+                           Heap Fetches: 0
+                           Buffers: shared hit=118 read=437 written=24
+                     ->  Index Scan using idx_transaction_account_date on transaction t  (cost=0.43..2.15 rows=25 width=18) (actual time=0.003..0.019 rows=25 loops=200000)
+                           Index Cond: (account_id = a.id)
+                           Buffers: shared hit=5554321 read=63935 written=3770
+ Planning:
+   Buffers: shared hit=189 read=16
+ Planning Time: 5.912 ms
+ JIT:
+   Functions: 30
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 6.010 ms, Inlining 0.000 ms, Optimization 2.722 ms, Emission 46.970 ms, Total 55.702 ms
+ Execution Time: 4133.440 ms
+
+--- The window-function SELECT (running balance), single account ---
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT t.id, t.txn_date, t.amount, t.description,
+       SUM(t.amount) OVER (PARTITION BY t.account_id ORDER BY t.txn_date, t.id) AS running_balance
+FROM transaction t
+WHERE t.account_id = 123456 AND t.txn_date <= '2025-03-31'
+ORDER BY t.txn_date, t.id;
+
+ WindowAgg  (cost=68.25..68.61 rows=16 width=72) (actual time=0.417..0.437 rows=15 loops=1)
+   Buffers: shared hit=10 read=17
+   ->  Sort  (cost=68.25..68.29 rows=16 width=40) (actual time=0.391..0.393 rows=15 loops=1)
+         Sort Key: txn_date, id
+         Sort Method: quicksort  Memory: 26kB
+         Buffers: shared hit=10 read=17
+         ->  Bitmap Heap Scan on transaction t  (cost=4.60..67.93 rows=16 width=40) (actual time=0.114..0.325 rows=15 loops=1)
+               Recheck Cond: ((account_id = 123456) AND (txn_date <= '2025-03-31'::date))
+               Heap Blocks: exact=15
+               Buffers: shared hit=4 read=17
+               ->  Bitmap Index Scan on idx_transaction_account_date  (cost=0.00..4.59 rows=16 width=0) (actual time=0.086..0.086 rows=15 loops=1)
+                     Index Cond: ((account_id = 123456) AND (txn_date <= '2025-03-31'::date))
+                     Buffers: shared hit=4 read=2
+ Planning:
+   Buffers: shared hit=112 read=3
+ Planning Time: 0.819 ms
+ Execution Time: 0.754 ms
+
+Both plans use idx_transaction_account_date (M5, V3) — the composite index
+built for a completely different investigation (M5's per-account date-range
+lookup) turns out to also be exactly the right index for M8's per-account
+aggregation and window function, since both are fundamentally "look up one
+account's transactions, optionally by date." No new index was needed.

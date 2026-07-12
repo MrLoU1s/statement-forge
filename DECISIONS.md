@@ -79,8 +79,73 @@ that query alone at 396ms warm (full parallel seq scan; PostgreSQL can't satisfy
 `count(*)` from an index under MVCC), which would have been added to *every* request to
 either endpoint had `Page<T>` been used instead.
 
-## D8 — When ORM, when native SQL
-<!-- TODO(M8): incl. the JPQL dead end for window functions -->
+## D8 — When ORM, when native SQL (and a correction to the plan's own premise)
+PLAN.md's stated justification for M8 was that JPQL can't express a window function or
+a bulk `INSERT ... SELECT`, so native SQL is the only option. Tested that claim directly
+against this project's actual stack (Hibernate 7.4.1.Final, Spring Data JPA 4.1.0,
+Boot 4.1) before writing any native SQL, same discipline as D5/D11's live-docs checks —
+**and the claim didn't hold.** Both worked in JPQL:
+1. `select new ...RunningBalanceLineDto(..., sum(t.amount) over (partition by
+   t.account.id order by t.txnDate, t.id)) from Transaction t where ...` compiled and
+   ran correctly — Hibernate translated the `over (...)` clause straight into a real SQL
+   window function.
+2. `insert into Statement (...) select r, a, ..., sum(case when ... then t.amount else 0
+   end), ... from StatementRun r, Account a join a.transactions t where ... group by r,
+   a` also executed successfully — Hibernate compiled it into a three-CTE query that
+   additionally handles `Statement.id`'s pooled-`SEQUENCE` batch allocation (D5)
+   automatically via `row_number() over()` + batched `nextval()`.
+
+Full generated SQL for both in `docs/evidence/m8-native-sql.log`. Hibernate 6 rewrote
+HQL's parser (ANTLR-based SQM) and added genuine window-function and CTE-based
+bulk-insert support somewhere along the way to 7.4 — "JPQL can't do window functions" is
+outdated training-data intuition for this stack, not a fact to build a milestone's
+narrative on. Flagged to the developer and discussed before writing PERFORMANCE.md or
+proceeding further, per this project's working agreement on plan-contradicted-by-reality
+situations — not silently reinterpreted.
+
+**Decision, once the premise was corrected:** keep `strategy=NATIVE_SQL` and the
+window-function endpoint as native SQL anyway (matching PLAN.md's deliverables), for
+reasons that don't depend on JPQL being incapable:
+- The HQL bulk-insert's generated SQL is a three-CTE query, most of which exists to
+  reimplement `Statement.id`'s sequence-batching logic in SQL that Hibernate already
+  handles for entity saves elsewhere — correct, but nothing this investigation needed;
+  the hand-written version says exactly what it means and no more.
+- `FILTER (WHERE ...)` reads as intent (sum rows meeting a condition); `CASE WHEN ...
+  ELSE 0 END` reads as a value substitution that happens to accumulate into a sum. Same
+  result, more indirection through a second conditional-logic idiom.
+- This is a pure set-based read/write operation with no entity semantics attached (no
+  dirty checking, no lazy loading, no per-row Java object needed) — there's nothing for
+  an ORM to abstract away from here.
+- The JD's actual ask ("decide when ORM helps and when raw SQL is the better tool") is a
+  judgment call about fit, not a report of a capability gap — being able to make that
+  call, and defend it, is the more sophisticated and more honest answer.
+
+**Measured result** (§6, `limitAccounts=20000`, warm, vs. M7's `BATCHED`): 1,164.27 →
+9,657.17 stmt/s (~8.3×), 303 → 3 JDBC statements (~101×); full 200,000-account run
+(impossible under `NAIVE`, would have been the slowest option under `BATCHED`) completes
+in 9.602s warm. `EXPLAIN` showed **no new index was needed** for either native query —
+`idx_transaction_account_date` (D6/M5), built for an unrelated single-account
+date-range lookup, backs both the aggregation and the window function too, since all
+three are fundamentally "this account's transactions, optionally bounded by date."
+
+**A real gotcha, not anticipated:** the first native `INSERT` attempt omitted `id` and
+got a real `NOT NULL` violation. D5's migration dropped `IDENTITY` but added no column
+`DEFAULT` — Hibernate's own entity write path never needed one (its
+`@SequenceGenerator` calls `nextval()` client-side via JDBC), but a hand-written native
+`INSERT` bypasses that generator entirely and must call `nextval('statement_id_seq')`
+itself. Opting out of the ORM for one query means opting out of everything it was doing
+silently for that query, id generation included — not a scoped decision.
+
+**Coverage difference, also real, also not a bug:** `NATIVE_SQL` writes a statement for
+*every* requested account (matching `NAIVE`'s full coverage), where `FETCH_JOIN`/
+`BATCHED` cover only ~66.5% (D11). Cause: PLAN.md's own SQL joins `account` to
+`transaction` with no period filter in the `JOIN` — only the `FILTER` clauses scope the
+period — so every account with *any* transaction ever (all of them, in this seed)
+produces a row, correctly zeroed where nothing matches. A different design choice than
+D11's inner-join-on-period, driven by *where* the period predicate lives, not by
+set-based vs. row-by-row execution — worth being able to explain the distinction
+between "this join drops rows with no match" and "this filter zeroes an aggregate"
+unprompted.
 
 ## D9 — Optimistic locking + isolation level for the batch
 <!-- TODO(M9): why READ COMMITTED suffices; when REPEATABLE READ would matter -->

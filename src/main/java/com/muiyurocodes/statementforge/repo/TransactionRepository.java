@@ -1,6 +1,7 @@
 package com.muiyurocodes.statementforge.repo;
 
 import com.muiyurocodes.statementforge.domain.Transaction;
+import com.muiyurocodes.statementforge.dto.RunningBalanceLineDto;
 import com.muiyurocodes.statementforge.dto.TransactionDto;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
@@ -41,4 +42,28 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("select new com.muiyurocodes.statementforge.dto.TransactionDto(t.id, t.txnDate, t.amount, t.description) "
             + "from Transaction t where t.id > :afterId order by t.id asc")
     List<TransactionDto> findAfterId(@Param("afterId") long afterId, Pageable pageable);
+
+    // PLAN.md M8: per-transaction running balance via a window function.
+    // Native, by deliberate choice, not because JPQL/HQL can't — empirically
+    // verified against this exact Hibernate version that the equivalent HQL
+    // (`select new ...(..., sum(t.amount) over (partition by t.account.id
+    // order by t.txnDate, t.id)) from Transaction t where ...`) compiles and
+    // runs correctly (see DECISIONS.md D8). Native SQL kept here because this
+    // is a pure read-only reporting query over one table with no entity
+    // graph or business logic attached — there is nothing for an ORM to
+    // abstract, so writing (and reading the EXPLAIN plan for) the exact SQL
+    // that runs is strictly simpler than going through HQL's translation
+    // layer for no benefit. `RunningBalanceLineDto`'s constructor argument
+    // order/types match this SELECT's column order exactly, which is what
+    // lets Spring Data JPA bind a native query straight into the record with
+    // no `@SqlResultSetMapping`.
+    @Query(value = """
+            SELECT t.id, t.txn_date, t.amount, t.description,
+                   SUM(t.amount) OVER (PARTITION BY t.account_id ORDER BY t.txn_date, t.id) AS running_balance
+            FROM transaction t
+            WHERE t.account_id = :accountId AND t.txn_date <= :periodEnd
+            ORDER BY t.txn_date, t.id
+            """, nativeQuery = true)
+    List<RunningBalanceLineDto> findRunningBalanceThroughPeriod(
+            @Param("accountId") Long accountId, @Param("periodEnd") LocalDate periodEnd);
 }
