@@ -38,7 +38,27 @@ and `CONCURRENTLY` cannot; a live production table would build it outside Flyway
 `CONCURRENTLY` to avoid holding a write lock for the build duration.
 
 ## D7 — Keyset pagination for deep listing
-<!-- TODO(M6): trade-off — no random page jumps; cursor API style -->
+`GET /api/transactions` ships both an OFFSET endpoint (`page`/`size`) and a keyset one
+(`afterId`/`size`), same path, dispatched by which query param is present (Spring MVC's
+`params` mapping condition) — kept both, not just the fixed version, because PLAN.md's
+whole point is a reproducible before/after, and a real API would likely keep an
+OFFSET-style "jump to page N" option too for UI page-number links even after adding
+keyset for deep/infinite-scroll consumption. Measured: at depth 10,000 (offset 500,000,
+`size=50`), OFFSET costs 115.1ms DB-side / ~118ms API vs keyset's 0.218ms DB-side /
+~13ms API — ~528× DB, ~9× end-to-end (same "DB gets fast, HTTP/JSON becomes the floor"
+shape as D6). Both plans use the *same* index (`transaction_pkey`, no new index added)
+— the point isn't a missing index, it's that `OFFSET n` is a positional skip a btree
+can't seek to directly, while `WHERE id > :afterId` is a value condition it can. See
+PERFORMANCE.md §4. **Trade-off, stated plainly:** keyset gives up random page-number
+access — there is no "jump straight to page 7,000," only "give me the next batch after
+this cursor." That's the accepted cost in every cursor-token API (GitHub, Stripe,
+Slack) because their consumers walk forward, not to an arbitrary page; a UI that
+genuinely needs numbered page links would still need OFFSET (or a maintained separate
+position index) for that specific feature. Also chose `Slice<T>` over `Page<T>` for the
+OFFSET endpoint specifically to avoid Spring Data's automatic `count(*)` query — measured
+that query alone at 396ms warm (full parallel seq scan; PostgreSQL can't satisfy
+`count(*)` from an index under MVCC), which would have been added to *every* request to
+either endpoint had `Page<T>` been used instead.
 
 ## D8 — When ORM, when native SQL
 <!-- TODO(M8): incl. the JPQL dead end for window functions -->

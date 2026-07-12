@@ -2,6 +2,8 @@ package com.muiyurocodes.statementforge.repo;
 
 import com.muiyurocodes.statementforge.domain.Transaction;
 import com.muiyurocodes.statementforge.dto.TransactionDto;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,4 +24,21 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             @Param("accountId") Long accountId,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to);
+
+    // OFFSET pagination (naive) — PLAN.md M6. `Slice`, not `Page`: Spring Data
+    // fetches size+1 rows to derive `hasNext` and issues no separate
+    // `count(*)` query — a `Page` return type would fire one over all 5M rows
+    // on every single request, its own mini-finding (see PERFORMANCE.md §4).
+    // `Pageable`'s offset = page * size becomes a literal SQL OFFSET.
+    @Query("select new com.muiyurocodes.statementforge.dto.TransactionDto(t.id, t.txnDate, t.amount, t.description) "
+            + "from Transaction t order by t.id asc")
+    Slice<TransactionDto> findAllByOrderByIdOffset(Pageable pageable);
+
+    // Keyset (cursor) pagination — PLAN.md M6. `id` is both the total order
+    // and the cursor: a single unique, monotonically increasing column needs
+    // no tie-breaker. `WHERE id > :afterId` seeks directly via the primary
+    // key's btree instead of scanning-and-discarding the skipped rows.
+    @Query("select new com.muiyurocodes.statementforge.dto.TransactionDto(t.id, t.txnDate, t.amount, t.description) "
+            + "from Transaction t where t.id > :afterId order by t.id asc")
+    List<TransactionDto> findAfterId(@Param("afterId") long afterId, Pageable pageable);
 }

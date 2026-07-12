@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 1 | N+1 in statement generation | 2,003 queries / 207.5s (1k accts) | 670 queries / 2.49s (667 accts, see §2) | [§2](#2-n1) |
 | 2 | Missing composite index | Parallel Seq Scan, 287.9ms, ~44.8k buffers | Index Scan, 0.204ms, 10 buffers | [§3](#3-indexing) |
-| 3 | OFFSET deep pagination | `[X]ms` @ page 10k | `[Y]ms` keyset | [§4](#4-pagination) |
+| 3 | OFFSET deep pagination | 115.1ms DB / 123.2ms API @ depth 10k (offset 500k) | 0.218ms DB / 13.7ms API, flat at any depth | [§4](#4-pagination) |
 | 4 | Row-by-row inserts (IDENTITY) | `[X]` rows/s | `[Y]` rows/s | [§5](#5-batch-inserts) |
 | 5 | ORM loop vs set-based native SQL | `[X]s` @ 20k accts | `[Y]s` (full 200k: `[Z]s`) | [§6](#6-orm-vs-native-sql) |
 | 6 | Lost update on run status | — | version conflict → 409 | [§7](#7-optimistic-locking) |
@@ -338,7 +338,139 @@ those columns were also read-hot without being part of the search predicate.
 
 ## 4. Pagination
 
-<!-- TODO(M6): latency-vs-depth table + both plans -->
+**Symptom.** `GET /api/transactions?page=&size=` — a plain "give me page N of the
+transaction table" listing — needs to stay usable at any depth into a 5,000,000-row
+table, not just near page 1.
+
+**Hypothesis.** `ORDER BY id LIMIT :size OFFSET :page*size` should get slower as `page`
+grows, because `OFFSET` is a purely *positional* skip: to return "row 500,001 through
+500,050" the executor has to walk past the first 500,000 matching rows first — it has
+no way to seek directly to a position, only to a value. A keyset query —
+`WHERE id > :afterId ORDER BY id LIMIT :size` — reframes the same request as "give me
+everything after value X," which a btree condition *can* seek to directly, so its cost
+should stay flat regardless of how deep `afterId` is.
+
+**Fix.** Two endpoints, both on `TransactionRepository`, dispatched from the same
+`/api/transactions` path via Spring MVC's `params` mapping condition
+(`params = "page"` vs `params = "afterId"` on `@GetMapping`) — matching the literal URLs
+PLAN.md specifies without an ambiguous route:
+```java
+// OFFSET — Slice<T>, not Page<T>: fetches size+1 rows to derive hasNext,
+// no separate count(*) query (see mini-finding below).
+@Query("select new ...TransactionDto(t.id, t.txnDate, t.amount, t.description) "
+        + "from Transaction t order by t.id asc")
+Slice<TransactionDto> findAllByOrderByIdOffset(Pageable pageable);
+
+// Keyset — id is both the total order and the cursor: one unique,
+// monotonically increasing column needs no tie-breaker.
+@Query("select new ...TransactionDto(t.id, t.txnDate, t.amount, t.description) "
+        + "from Transaction t where t.id > :afterId order by t.id asc")
+List<TransactionDto> findAfterId(@Param("afterId") long afterId, Pageable pageable);
+```
+`TransactionPageController` builds `PageRequest.of(page, size)` for the OFFSET path
+(Spring Data computes `offset = page * size`) and `PageRequest.ofSize(size)` for the
+keyset path; the keyset response's `nextCursor` is simply the last row's `id`, or `null`
+once a page comes back short.
+
+**Measurement — DB-level, both at the same logical position** (row 500,001 onward,
+`size=50`; full plans in
+[`docs/evidence/m6-pagination.log`](docs/evidence/m6-pagination.log)):
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM transaction ORDER BY id LIMIT 50 OFFSET 500000;
+```
+```
+ Limit  (cost=17468.43..17470.18 rows=50 width=40) (actual time=115.013..115.042 rows=50 loops=1)
+   Buffers: shared hit=7163
+   ->  Index Scan using transaction_pkey on transaction  (cost=0.43..174680.43 rows=5000000 width=40) (actual time=0.047..86.648 rows=500050 loops=1)
+         Buffers: shared hit=7163
+ Planning Time: 0.582 ms
+ Execution Time: 115.148 ms
+```
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM transaction WHERE id > 500000 ORDER BY id LIMIT 50;
+```
+```
+ Limit  (cost=0.43..2.30 rows=50 width=40) (actual time=0.084..0.099 rows=50 loops=1)
+   Buffers: shared hit=8
+   ->  Index Scan using transaction_pkey on transaction  (cost=0.43..168005.78 rows=4487677 width=40) (actual time=0.083..0.092 rows=50 loops=1)
+         Index Cond: (id > 500000)
+         Buffers: shared hit=8
+ Planning Time: 0.903 ms
+ Execution Time: 0.218 ms
+```
+
+**The interesting detail: both plans use the same index (`transaction_pkey`), no new
+index was added.** `ORDER BY id` already matches the primary key's natural order, so the
+planner picks `Index Scan using transaction_pkey` for *both* queries — this is already
+the best access path available for either. The OFFSET plan's `rows=500050` (`actual
+... rows=500050 loops=1`) is the tell: even walking a perfectly-ordered index, Postgres
+still visits and discards 500,000 rows before it can return the 50 it was asked for.
+The keyset plan's `Index Cond: (id > 500000)` is a direct seek — no rows visited before
+the first one returned. Same index, same table, same row count returned; ~528× the
+execution time and ~895× the buffers for OFFSET, purely from *where in the table* the
+answer needs to come from.
+
+**Measurement — API latency vs. depth** (`scripts/pagination-bench.ps1`, `size=50`,
+warm runs, two independent passes for reproducibility; keyset depth is approximated by
+jumping straight to `afterId = depth × size` rather than walking the cursor
+`depth` times — PLAN.md's sanctioned shortcut, since `WHERE id > :afterId` costs the
+same regardless of how that `id` value was obtained; full CSV in
+[`docs/evidence/m6-pagination-bench.csv`](docs/evidence/m6-pagination-bench.csv)):
+
+| depth (pages) | OFFSET ms (run 1) | OFFSET ms (run 2) | keyset ms (run 1) | keyset ms (run 2) |
+|---|---|---|---|---|
+| 1 | 19.11 | 12.77 | 19.00 | 13.68 |
+| 10 | 14.35 | 14.25 | 14.18 | 12.29 |
+| 100 | 18.20 | 11.77 | 13.34 | 12.38 |
+| 1,000 | 23.53 | 21.58 | 13.70 | 13.77 |
+| 10,000 | **123.16** | **112.32** | **13.74** | **13.06** |
+
+OFFSET grows with depth (~19ms → ~118ms across two orders of magnitude, both runs);
+keyset stays flat (~13–14ms regardless of depth) — the DB-level gap (528×) shrinks to
+~9× end-to-end because, same as §3, once the query itself is sub-millisecond, HTTP
+round-trip and JSON serialization become the floor. At `size=50` and 5M rows the
+absolute OFFSET numbers are still small (double-digit-to-triple-digit ms, not seconds) —
+the shape of the curve, not the absolute value, is the finding; a bigger table or a
+smaller page size would make the same O(offset) growth land at seconds instead of
+milliseconds.
+
+**Mini-finding: the `count(*)` tax a `Page<T>` return type would have added.** PLAN.md
+flags this explicitly — I used `Slice<T>` specifically to avoid it, but measured what
+avoiding it actually saved rather than asserting it:
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT count(*) FROM transaction;
+```
+```
+ Finalize Aggregate  (actual time=388.647..395.983 rows=1 loops=1)
+   Buffers: shared hit=14314 read=30515
+   ->  Gather  (actual time=388.426..395.968 rows=3 loops=1)
+         ->  Partial Aggregate (actual time=380.446..380.448 rows=1 loops=3)
+               ->  Parallel Seq Scan on transaction (actual time=0.031..244.781 rows=1666667 loops=3)
+ Execution Time: 396.292 ms
+```
+`count(*)` can't be answered from an index alone under MVCC (visibility has to be
+checked row-by-row), so it's a full parallel sequential scan every time — **396ms warm**,
+independent of `page`/`size`/`afterId`. Had I used `Page<TransactionDto>` instead of
+`Slice<TransactionDto>`, this ~396ms would be added to the top of *every single request*
+to either endpoint, dwarfing even the worst OFFSET number measured above (123ms) and
+completely swamping the keyset endpoint's ~13ms. `Slice` avoids it entirely by fetching
+`size + 1` rows and deriving `hasNext` from whether the extra row came back — no
+aggregate query at all.
+
+**What I learned.** OFFSET's cost is about *position*, not content, and — the part I
+didn't expect going in — a perfect index doesn't fix it. `(account_id, txn_date)` in §3
+made a *cheaper plan possible*; here, the *same* index already backs both queries, and
+the plan for OFFSET is still the best one available — it's just that "the 500,001st row
+in id order" isn't a value a btree condition can express, only a position the executor
+has to walk to by counting. Keyset works by reframing the request from a position
+(`OFFSET n`) into a value (`WHERE id > x`), which *is* something a btree can seek to.
+The trade-off is real, not free: keyset can't jump to an arbitrary page number — only
+"give me the next batch after this cursor" — which is why cursor-token APIs (GitHub,
+Stripe, Slack) universally give up random page-jump access in exchange for flat cost at
+any depth. For a UI that genuinely needs "jump to page 7,000" there's no way around
+paying the OFFSET cost (or maintaining a separate position index, out of scope here);
+for infinite-scroll/next-batch consumption — which is what most deep-pagination API
+consumers actually do — keyset is strictly better and this measurement is why.
 
 ## 5. Batch inserts
 

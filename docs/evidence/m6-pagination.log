@@ -1,0 +1,106 @@
+M6 — OFFSET vs keyset pagination over transaction (5,000,000 rows)
+Both queries at the same logical position: row 500,001 onward, LIMIT 50.
+No new index — both plans use the existing transaction_pkey (PK on id).
+
+=== OFFSET: SELECT * FROM transaction ORDER BY id LIMIT 50 OFFSET 500000; ===
+--- cold ---
+ Limit  (cost=17468.43..17470.18 rows=50 width=40) (actual time=129.492..129.507 rows=50 loops=1)
+   Buffers: shared hit=7163
+   ->  Index Scan using transaction_pkey on transaction  (cost=0.43..174680.43 rows=5000000 width=40) (actual time=0.106..100.440 rows=500050 loops=1)
+         Buffers: shared hit=7163
+ Planning:
+   Buffers: shared hit=96
+ Planning Time: 0.678 ms
+ Execution Time: 129.655 ms
+
+--- warm ---
+ Limit  (cost=17468.43..17470.18 rows=50 width=40) (actual time=115.013..115.042 rows=50 loops=1)
+   Buffers: shared hit=7163
+   ->  Index Scan using transaction_pkey on transaction  (cost=0.43..174680.43 rows=5000000 width=40) (actual time=0.047..86.648 rows=500050 loops=1)
+         Buffers: shared hit=7163
+ Planning:
+   Buffers: shared hit=96
+ Planning Time: 0.582 ms
+ Execution Time: 115.148 ms
+
+=== KEYSET: SELECT * FROM transaction WHERE id > 500000 ORDER BY id LIMIT 50; ===
+--- cold ---
+ Limit  (cost=0.43..2.30 rows=50 width=40) (actual time=0.164..0.179 rows=50 loops=1)
+   Buffers: shared hit=8
+   ->  Index Scan using transaction_pkey on transaction  (cost=0.43..168005.78 rows=4487677 width=40) (actual time=0.162..0.171 rows=50 loops=1)
+         Index Cond: (id > 500000)
+         Buffers: shared hit=8
+ Planning:
+   Buffers: shared hit=99
+ Planning Time: 1.152 ms
+ Execution Time: 0.315 ms
+
+--- warm ---
+ Limit  (cost=0.43..2.30 rows=50 width=40) (actual time=0.084..0.099 rows=50 loops=1)
+   Buffers: shared hit=8
+   ->  Index Scan using transaction_pkey on transaction  (cost=0.43..168005.78 rows=4487677 width=40) (actual time=0.083..0.092 rows=50 loops=1)
+         Index Cond: (id > 500000)
+         Buffers: shared hit=8
+ Planning:
+   Buffers: shared hit=99
+ Planning Time: 0.903 ms
+ Execution Time: 0.218 ms
+
+=== Mini-finding: what a Page<T> (not Slice<T>) would have cost, every request ===
+SELECT count(*) FROM transaction;  -- the query Spring Data fires once per
+                                    -- Page<T> request in addition to the content query
+--- cold ---
+ Finalize Aggregate  (cost=71870.88..71870.89 rows=1 width=8) (actual time=1396.906..1406.106 rows=1 loops=1)
+   Buffers: shared hit=14301 read=30528
+   ->  Gather  (cost=71870.67..71870.88 rows=2 width=8) (actual time=1396.708..1406.092 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=14301 read=30528
+         ->  Partial Aggregate  (cost=70870.67..70870.68 rows=1 width=8) (actual time=1384.425..1384.426 rows=1 loops=3)
+               Buffers: shared hit=14301 read=30528
+               ->  Parallel Seq Scan on transaction  (cost=0.00..65662.33 rows=2083333 width=0) (actual time=0.076..1245.881 rows=1666667 loops=3)
+                     Buffers: shared hit=14301 read=30528
+ Planning:
+   Buffers: shared hit=85
+ Planning Time: 0.678 ms
+ Execution Time: 1406.325 ms
+
+--- warm ---
+ Finalize Aggregate  (cost=71870.88..71870.89 rows=1 width=8) (actual time=388.647..395.983 rows=1 loops=1)
+   Buffers: shared hit=14314 read=30515
+   ->  Gather  (cost=71870.67..71870.88 rows=2 width=8) (actual time=388.426..395.968 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=14314 read=30515
+         ->  Partial Aggregate  (cost=70870.67..70870.68 rows=1 width=8) (actual time=380.446..380.448 rows=1 loops=3)
+               Buffers: shared hit=14314 read=30515
+               ->  Parallel Seq Scan on transaction  (cost=0.00..65662.33 rows=2083333 width=0) (actual time=0.031..244.781 rows=1666667 loops=3)
+                     Buffers: shared hit=14314 read=30515
+ Planning:
+   Buffers: shared hit=85
+ Planning Time: 0.687 ms
+ Execution Time: 396.292 ms
+-- Note: MVCC visibility means Postgres can't answer count(*) from the index
+-- alone; it's a full (parallel) seq scan every time, independent of depth or
+-- page size. Fixed tax that would land on EVERY Page<T> request, on top of
+-- whichever content query (OFFSET or keyset) ran alongside it.
+
+=== API latency-vs-depth benchmark (scripts/pagination-bench.ps1) ===
+size=50, depth = page number (OFFSET) / afterId = depth*50 (keyset).
+Two warm runs, see docs/evidence/m6-pagination-bench.csv for raw CSV.
+
+run 1:
+depth,offset_ms,keyset_ms
+1,19.11,19
+10,14.35,14.18
+100,18.2,13.34
+1000,23.53,13.7
+10000,123.16,13.74
+
+run 2 (reproducibility check):
+depth,offset_ms,keyset_ms
+1,12.77,13.68
+10,14.25,12.29
+100,11.77,12.38
+1000,21.58,13.77
+10000,112.32,13.06
